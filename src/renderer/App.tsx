@@ -449,7 +449,14 @@ const App: React.FC = () => {
                   </ReactMarkdown>
                 ) : null}
                 {message.isStreaming && !message.content && (
-                  <span className="text-[#8b949e] italic">Thinking...</span>
+                  <span className="text-[#8b949e] italic flex items-center gap-2">
+                    <span className="flex gap-1">
+                      <span className="w-2 h-2 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                      <span className="w-2 h-2 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                      <span className="w-2 h-2 bg-[#58a6ff] rounded-full animate-bounce"></span>
+                    </span>
+                    Thinking...
+                  </span>
                 )}
                 {message.isStreaming && message.content && (
                   <span className="inline-block w-2 h-4 ml-1 bg-[#58a6ff] animate-pulse rounded-sm" />
