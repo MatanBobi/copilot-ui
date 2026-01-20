@@ -105,6 +105,11 @@ function extractExecutables(command: string): string[] {
     .replace(/'[^']*'/g, "''")
     .replace(/`[^`]*`/g, '``')
   
+  // Remove shell redirections like 2>&1, >&2, 2>/dev/null, etc.
+  cleaned = cleaned.replace(/\d*>&?\d+/g, '')      // 2>&1, >&1, 1>&2
+  cleaned = cleaned.replace(/\d+>>\S+/g, '')       // 2>>/dev/null
+  cleaned = cleaned.replace(/\d+>\S+/g, '')        // 2>/dev/null
+  
   // Split on shell operators and separators
   const segments = cleaned.split(/[;&|]+/)
   
@@ -222,20 +227,31 @@ async function handlePermissionRequest(
     return { kind: 'approved' }
   }
   
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return { kind: 'denied-no-approval-rule-and-could-not-request-from-user' }
+  // For read requests, check if in-scope (auto-approve) or out-of-scope (need permission)
+  let isOutOfScope = false
+  if (request.kind === 'read' && sessionState) {
+    const requestPath = req.path as string | undefined
+    const sessionCwd = sessionState.cwd
+    
+    if (requestPath) {
+      // Check if path is outside the session's working directory
+      if (!requestPath.startsWith(sessionCwd + '/') && !requestPath.startsWith(sessionCwd + '\\') && requestPath !== sessionCwd) {
+        isOutOfScope = true
+        console.log(`[${ourSessionId}] Out-of-scope read detected:`, requestPath, 'not in', sessionCwd)
+      } else {
+        // In-scope reads are auto-approved (like CLI behavior)
+        console.log(`[${ourSessionId}] Auto-approved in-scope read:`, requestPath)
+        return { kind: 'approved' }
+      }
+    } else {
+      // No path specified - auto-approve reads within trusted workspace
+      console.log(`[${ourSessionId}] Auto-approved read (no path, trusted workspace)`)
+      return { kind: 'approved' }
+    }
   }
   
-  // Check if this is an out-of-scope read (reading outside the session's cwd)
-  let isOutOfScope = false
-  if (request.kind === 'read' && req.path && sessionState) {
-    const requestPath = req.path as string
-    const sessionCwd = sessionState.cwd
-    // Check if path is outside the session's working directory
-    if (!requestPath.startsWith(sessionCwd + '/') && !requestPath.startsWith(sessionCwd + '\\') && requestPath !== sessionCwd) {
-      isOutOfScope = true
-      console.log(`[${ourSessionId}] Out-of-scope read detected:`, requestPath, 'not in', sessionCwd)
-    }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { kind: 'denied-no-approval-rule-and-could-not-request-from-user' }
   }
   
   // Log all request fields for debugging
@@ -283,11 +299,21 @@ async function createNewSession(model?: string, cwd?: string): Promise<string> {
     } else if (event.type === 'session.idle') {
       mainWindow.webContents.send('copilot:idle', { sessionId })
     } else if (event.type === 'tool.execution_start') {
-      console.log(`[${sessionId}] Tool start:`, event.data.toolName)
-      mainWindow.webContents.send('copilot:tool-start', { sessionId, ...event.data })
+      console.log(`[${sessionId}] Tool start:`, event.data.toolName, event.data.input)
+      mainWindow.webContents.send('copilot:tool-start', { 
+        sessionId, 
+        toolCallId: event.data.toolCallId,
+        toolName: event.data.toolName,
+        input: event.data.input  // Include tool input (path, old_str, new_str, etc.)
+      })
     } else if (event.type === 'tool.execution_complete') {
-      console.log(`[${sessionId}] Tool end:`, event.data.toolCallId)
-      mainWindow.webContents.send('copilot:tool-end', { sessionId, ...event.data })
+      console.log(`[${sessionId}] Tool end:`, event.data.toolCallId, event.data.output)
+      mainWindow.webContents.send('copilot:tool-end', { 
+        sessionId, 
+        toolCallId: event.data.toolCallId,
+        toolName: event.data.toolName,
+        output: event.data.output  // Include tool output
+      })
     } else if (event.type === 'tool.confirmation_requested') {
       console.log(`[${sessionId}] Confirmation requested:`, event.data)
       mainWindow.webContents.send('copilot:confirm', { sessionId, ...event.data })
@@ -361,18 +387,20 @@ async function initCopilot(): Promise<void> {
           } else if (event.type === 'session.idle') {
             mainWindow.webContents.send('copilot:idle', { sessionId })
           } else if (event.type === 'tool.execution_start') {
-            console.log(`[${sessionId}] Tool start:`, event.data.toolName)
+            console.log(`[${sessionId}] Tool start:`, event.data.toolName, event.data.input)
             mainWindow.webContents.send('copilot:tool-start', { 
               sessionId, 
               toolCallId: event.data.toolCallId, 
-              toolName: event.data.toolName 
+              toolName: event.data.toolName,
+              input: event.data.input
             })
           } else if (event.type === 'tool.execution_complete') {
-            console.log(`[${sessionId}] Tool end:`, event.data.toolCallId)
+            console.log(`[${sessionId}] Tool end:`, event.data.toolCallId, event.data.output)
             mainWindow.webContents.send('copilot:tool-end', { 
               sessionId, 
               toolCallId: event.data.toolCallId, 
-              toolName: event.data.toolName 
+              toolName: event.data.toolName,
+              output: event.data.output
             })
           }
         })
@@ -759,16 +787,20 @@ ipcMain.handle('copilot:resumePreviousSession', async (_event, sessionId: string
     } else if (event.type === 'session.idle') {
       mainWindow.webContents.send('copilot:idle', { sessionId })
     } else if (event.type === 'tool.execution_start') {
+      console.log(`[${sessionId}] Tool start:`, event.data.toolName, event.data.input)
       mainWindow.webContents.send('copilot:tool-start', { 
         sessionId, 
         toolCallId: event.data.toolCallId, 
-        toolName: event.data.toolName 
+        toolName: event.data.toolName,
+        input: event.data.input
       })
     } else if (event.type === 'tool.execution_complete') {
+      console.log(`[${sessionId}] Tool end:`, event.data.toolCallId, event.data.output)
       mainWindow.webContents.send('copilot:tool-end', { 
         sessionId, 
         toolCallId: event.data.toolCallId, 
-        toolName: event.data.toolName 
+        toolName: event.data.toolName,
+        output: event.data.output
       })
     }
   })

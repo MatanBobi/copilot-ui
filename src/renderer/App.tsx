@@ -16,6 +16,8 @@ interface ActiveTool {
   toolCallId: string
   toolName: string
   status: 'running' | 'done'
+  input?: Record<string, unknown>  // Tool input (path, old_str, new_str, etc.)
+  output?: unknown  // Tool output
 }
 
 interface ModelInfo {
@@ -79,7 +81,7 @@ const App: React.FC = () => {
   const [showAlwaysAllowed, setShowAlwaysAllowed] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const activeTabIdRef = useRef<string | null>(null)
 
   // Keep ref in sync with state
@@ -112,6 +114,13 @@ const App: React.FC = () => {
   useEffect(() => {
     scrollToBottom()
   }, [activeTab?.messages])
+
+  // Reset textarea height when input is cleared
+  useEffect(() => {
+    if (!inputValue && inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
+  }, [inputValue])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -301,7 +310,7 @@ const App: React.FC = () => {
     })
 
     const unsubscribeToolStart = window.electronAPI.copilot.onToolStart((data) => {
-      const { sessionId, toolCallId, toolName } = data
+      const { sessionId, toolCallId, toolName, input } = data
       const name = toolName || 'unknown'
       const id = toolCallId || generateId()
       
@@ -312,13 +321,13 @@ const App: React.FC = () => {
         if (tab.id !== sessionId) return tab
         return {
           ...tab,
-          activeTools: [...tab.activeTools, { toolCallId: id, toolName: name, status: 'running' }]
+          activeTools: [...tab.activeTools, { toolCallId: id, toolName: name, status: 'running', input }]
         }
       }))
     })
 
     const unsubscribeToolEnd = window.electronAPI.copilot.onToolEnd((data) => {
-      const { sessionId, toolCallId, toolName } = data
+      const { sessionId, toolCallId, toolName, output } = data
       const name = toolName || 'unknown'
       
       // Skip internal tools
@@ -329,12 +338,13 @@ const App: React.FC = () => {
         return {
           ...tab,
           activeTools: tab.activeTools.map(t => 
-            t.toolCallId === toolCallId ? { ...t, status: 'done' as const } : t
+            t.toolCallId === toolCallId ? { ...t, status: 'done' as const, output } : t
           )
         }
       }))
       
-      // Remove completed tools after a short delay
+      // Remove completed tools after a delay (longer for edit/create to see details)
+      const isFileOperation = name === 'edit' || name === 'create'
       setTimeout(() => {
         setTabs(prev => prev.map(tab => {
           if (tab.id !== sessionId) return tab
@@ -343,7 +353,7 @@ const App: React.FC = () => {
             activeTools: tab.activeTools.filter(t => t.toolCallId !== toolCallId)
           }
         }))
-      }, 2000)
+      }, isFileOperation ? 4000 : 2000)
     })
 
     // Listen for permission requests
@@ -1009,25 +1019,98 @@ const App: React.FC = () => {
           </div>
         ))}
         
-        {/* Active Tools Indicator */}
+        {/* Active Tools Indicator - Enhanced with file/edit details */}
         {(activeTab?.activeTools?.length || 0) > 0 && (
           <div className="flex justify-start">
-            <div className="flex flex-wrap gap-2 px-3 py-2 bg-[#1c2128] rounded-lg border border-[#30363d]">
-              {activeTab?.activeTools.map((tool) => (
-                <span 
-                  key={tool.toolCallId}
-                  className={`text-xs flex items-center gap-1.5 ${
-                    tool.status === 'done' ? 'text-[#3fb950]' : 'text-[#8b949e]'
-                  }`}
-                >
-                  {tool.status === 'running' ? (
-                    <span className="inline-block w-2 h-2 rounded-full bg-[#d29922] animate-pulse" />
-                  ) : (
-                    <span className="text-[#3fb950]">✓</span>
-                  )}
-                  {tool.toolName}
-                </span>
-              ))}
+            <div className="bg-[#1c2128] rounded-lg border border-[#30363d] overflow-hidden max-w-[80%]">
+              {activeTab?.activeTools.map((tool) => {
+                const input = tool.input || {}
+                const path = input.path as string | undefined
+                const filename = path ? path.split('/').pop() : undefined
+                const isEdit = tool.toolName === 'edit'
+                const isCreate = tool.toolName === 'create'
+                const isView = tool.toolName === 'view'
+                const isBash = tool.toolName === 'bash'
+                const isGrep = tool.toolName === 'grep'
+                const isGlob = tool.toolName === 'glob'
+                
+                return (
+                  <div 
+                    key={tool.toolCallId}
+                    className="px-3 py-2 border-b border-[#30363d] last:border-b-0"
+                  >
+                    {/* Tool header */}
+                    <div className={`text-xs flex items-center gap-1.5 ${
+                      tool.status === 'done' ? 'text-[#3fb950]' : 'text-[#8b949e]'
+                    }`}>
+                      {tool.status === 'running' ? (
+                        <span className="inline-block w-2 h-2 rounded-full bg-[#d29922] animate-pulse shrink-0" />
+                      ) : (
+                        <span className="text-[#3fb950] shrink-0">✓</span>
+                      )}
+                      <span className="font-medium">{tool.toolName}</span>
+                      {filename && (
+                        <span className="text-[#58a6ff] font-mono truncate">{filename}</span>
+                      )}
+                    </div>
+                    
+                    {/* Edit details - show old/new strings */}
+                    {isEdit && input.old_str && (
+                      <div className="mt-1.5 text-[10px] font-mono">
+                        <div className="flex gap-1">
+                          <span className="text-[#f85149] shrink-0">−</span>
+                          <span className="text-[#f85149] truncate max-w-[300px]">
+                            {(input.old_str as string).split('\n')[0].slice(0, 60)}{(input.old_str as string).length > 60 ? '...' : ''}
+                          </span>
+                        </div>
+                        {input.new_str !== undefined && (
+                          <div className="flex gap-1">
+                            <span className="text-[#3fb950] shrink-0">+</span>
+                            <span className="text-[#3fb950] truncate max-w-[300px]">
+                              {(input.new_str as string).split('\n')[0].slice(0, 60)}{(input.new_str as string).length > 60 ? '...' : ''}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Create details - show file being created */}
+                    {isCreate && path && (
+                      <div className="mt-1 text-[10px] text-[#8b949e] font-mono truncate">
+                        Creating: {path}
+                      </div>
+                    )}
+                    
+                    {/* View details - show view range if present */}
+                    {isView && input.view_range && (
+                      <div className="mt-1 text-[10px] text-[#8b949e] font-mono">
+                        Lines {(input.view_range as number[])[0]}-{(input.view_range as number[])[1]}
+                      </div>
+                    )}
+                    
+                    {/* Bash details - show command */}
+                    {isBash && input.command && (
+                      <div className="mt-1 text-[10px] text-[#8b949e] font-mono truncate max-w-[400px]">
+                        $ {(input.command as string).slice(0, 80)}{(input.command as string).length > 80 ? '...' : ''}
+                      </div>
+                    )}
+                    
+                    {/* Grep details - show pattern */}
+                    {isGrep && input.pattern && (
+                      <div className="mt-1 text-[10px] text-[#8b949e] font-mono truncate">
+                        /{input.pattern as string}/{input.glob ? ` in ${input.glob as string}` : ''}
+                      </div>
+                    )}
+                    
+                    {/* Glob details - show pattern */}
+                    {isGlob && input.pattern && (
+                      <div className="mt-1 text-[10px] text-[#8b949e] font-mono truncate">
+                        {input.pattern as string}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
@@ -1116,25 +1199,43 @@ const App: React.FC = () => {
 
       {/* Input Area */}
       <div className="shrink-0 p-3 bg-[#161b22] border-t border-[#30363d]">
-        <div className="flex items-center gap-2 bg-[#0d1117] rounded-lg border border-[#30363d] focus-within:border-[#58a6ff] transition-colors">
-          <input
+        <div className="flex items-center bg-[#0d1117] rounded-lg border border-[#30363d] focus-within:border-[#58a6ff] transition-colors">
+          <textarea
             ref={inputRef}
-            type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyPress}
-            placeholder="Ask Copilot..."
-            className="flex-1 bg-transparent py-2.5 px-4 text-[#e6edf3] placeholder-[#484f58] outline-none text-sm"
+            placeholder="Ask Copilot... (Shift+Enter for new line)"
+            className="flex-1 bg-transparent py-2.5 px-4 text-[#e6edf3] placeholder-[#484f58] outline-none text-sm resize-none min-h-[40px] max-h-[200px]"
             disabled={status !== 'connected' || activeTab?.isProcessing}
             autoFocus
+            rows={1}
+            style={{ height: 'auto' }}
+            onInput={(e) => {
+              const target = e.target as HTMLTextAreaElement
+              target.style.height = 'auto'
+              target.style.height = Math.min(target.scrollHeight, 200) + 'px'
+            }}
           />
-          <button
-            onClick={handleSendMessage}
-            disabled={!inputValue.trim() || status !== 'connected' || activeTab?.isProcessing}
-            className="mr-2 px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
-          >
-            {activeTab?.isProcessing ? 'Sending...' : 'Send'}
-          </button>
+          {activeTab?.isProcessing ? (
+            <button
+              onClick={handleStop}
+              className="shrink-0 px-4 py-2.5 text-[#f85149] hover:text-[#ff7b72] text-xs font-medium transition-colors flex items-center gap-1.5"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+              </svg>
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={handleSendMessage}
+              disabled={!inputValue.trim() || status !== 'connected'}
+              className="shrink-0 px-4 py-2.5 text-[#58a6ff] hover:text-[#79c0ff] disabled:opacity-30 disabled:cursor-not-allowed text-xs font-medium transition-colors"
+            >
+              Send
+            </button>
+          )}
         </div>
       </div>
         </div>
