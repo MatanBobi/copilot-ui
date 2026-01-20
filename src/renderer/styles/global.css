@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  background: transparent;
+  color: #e6edf3;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 148, 158, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 148, 158, 0.5);
+}
+
+/* Window drag region */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Terminal container styles */
+.terminal-container {
+  padding: 16px 20px;
+}
+
+.terminal-container .xterm {
+  height: 100%;
+}
+
+.terminal-container .xterm-viewport {
+  background: transparent !important;
+  overflow-y: auto !important;
+}
+
+.terminal-container .xterm-screen {
+  background: transparent !important;
+}
+
+/* Terminal selection */
+.xterm .xterm-selection div {
+  background: rgba(88, 166, 255, 0.25) !important;
+}
+
+/* Terminal cursor */
+.terminal-container .xterm-cursor-layer {
+  z-index: 10;
+}
+
+/* Focus ring for terminal */
+.terminal-container:focus-within {
+  outline: none;
+}
+
+/* Smooth animations */
+button {
+  transition: all 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+/* Keyboard hints */
+kbd {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+}
+
+/* Status glow animation */
+@keyframes status-glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(63, 185, 80, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(63, 185, 80, 0.8);
+  }
+}
+
+.status-glow {
+  animation: status-glow 2s ease-in-out infinite;
+}
+
+/* Selection styles */
+::selection {
+  background: rgba(88, 166, 255, 0.3);
+  color: inherit;
+}
+
+/* Prevent text selection on UI elements */
+.drag-region,
+button,
+.no-select {
+  user-select: none;
+}
+
+/* Terminal text selection should work */
+.terminal-container {
+  user-select: text;
+}
+
+/* Window shadow when focused */
+#root > div {
+  box-shadow: 
+    0 0 0 1px rgba(48, 54, 61, 0.5),
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Subtle inner glow for depth */
+#root > div::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Font loading */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('JetBrains Mono Regular'), local('JetBrainsMono-Regular');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local('JetBrains Mono SemiBold'), local('JetBrainsMono-SemiBold');
+}
