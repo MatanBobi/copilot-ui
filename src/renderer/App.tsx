@@ -18,6 +18,12 @@ interface ActiveTool {
   status: 'running' | 'done'
 }
 
+interface ModelInfo {
+  id: string
+  name: string
+  multiplier: number
+}
+
 interface PendingConfirmation {
   requestId: string
   kind: string
@@ -38,7 +44,7 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentModel, setCurrentModel] = useState('gpt-5')
-  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [activeTools, setActiveTools] = useState<ActiveTool[]>([])
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
@@ -319,7 +325,7 @@ const App: React.FC = () => {
                 }}
                 className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#21262d] hover:bg-[#30363d] transition-colors text-xs text-[#8b949e] hover:text-[#e6edf3]"
               >
-                <span>{currentModel}</span>
+                <span>{availableModels.find(m => m.id === currentModel)?.name || currentModel}</span>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M6 9l6 6 6-6"/>
                 </svg>
@@ -327,18 +333,25 @@ const App: React.FC = () => {
               
               {showModelDropdown && availableModels.length > 0 && (
                 <div 
-                  className="absolute top-full left-0 mt-1 py-1 bg-[#21262d] border border-[#30363d] rounded-lg shadow-lg z-50 min-w-[160px]"
+                  className="absolute top-full left-0 mt-1 py-1 bg-[#21262d] border border-[#30363d] rounded-lg shadow-lg z-50 min-w-[240px]"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {availableModels.map((model) => (
                     <button
-                      key={model}
-                      onClick={() => handleModelChange(model)}
-                      className={`w-full px-3 py-1.5 text-left text-xs hover:bg-[#30363d] transition-colors ${
-                        model === currentModel ? 'text-[#58a6ff]' : 'text-[#e6edf3]'
+                      key={model.id}
+                      onClick={() => handleModelChange(model.id)}
+                      className={`w-full px-3 py-1.5 text-left text-xs hover:bg-[#30363d] transition-colors flex justify-between items-center ${
+                        model.id === currentModel ? 'text-[#58a6ff]' : 'text-[#e6edf3]'
                       }`}
                     >
-                      {model === currentModel && '✓ '}{model}
+                      <span>{model.id === currentModel && '✓ '}{model.name}</span>
+                      <span className={`ml-2 ${
+                        model.multiplier === 0 ? 'text-[#3fb950]' : 
+                        model.multiplier < 1 ? 'text-[#3fb950]' :
+                        model.multiplier > 1 ? 'text-[#d29922]' : 'text-[#8b949e]'
+                      }`}>
+                        {model.multiplier === 0 ? 'free' : `${model.multiplier}×`}
+                      </span>
                     </button>
                   ))}
                 </div>

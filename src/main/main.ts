@@ -23,7 +23,7 @@ Object.assign(console, log.functions)
 
 const store = new Store({
   defaults: {
-    model: 'gpt-5'
+    model: 'gpt-5.2'
   }
 })
 
@@ -42,11 +42,20 @@ const pendingPermissions = new Map<string, {
 // Track "always allow" permissions by executable (e.g., "ls", "find", "curl")
 const alwaysAllowedExecutables = new Set<string>()
 
-const AVAILABLE_MODELS = [
-  'gpt-5',
-  'claude-sonnet-4.5',
-  'claude-sonnet-4',
-  'gpt-4.1',
+// Model info with multipliers
+interface ModelInfo {
+  id: string
+  name: string
+  multiplier: number
+}
+
+// Static list of available models with pricing multipliers (sorted by cost low to high)
+const AVAILABLE_MODELS: ModelInfo[] = [
+  { id: 'gpt-5-mini', name: 'GPT-5 mini', multiplier: 0 },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (Preview)', multiplier: 0.33 },
+  { id: 'gpt-5.2', name: 'GPT-5.2', multiplier: 1 },
+  { id: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5', multiplier: 1 },
+  { id: 'claude-opus-4.5', name: 'Opus 4.5', multiplier: 3 },
 ]
 
 // Extract the executable name from a shell command
@@ -270,7 +279,8 @@ ipcMain.handle('copilot:permissionResponse', async (_event, data: {
 })
 
 ipcMain.handle('copilot:setModel', async (_event, model: string) => {
-  if (!AVAILABLE_MODELS.includes(model)) {
+  const validModels = AVAILABLE_MODELS.map(m => m.id)
+  if (!validModels.includes(model)) {
     throw new Error(`Invalid model: ${model}`)
   }
   
@@ -376,6 +386,8 @@ if (!gotTheLock) {
   })
 
   app.whenReady().then(() => {
+    console.log('Available models:', AVAILABLE_MODELS.map(m => `${m.name} (${m.multiplier}×)`).join(', '))
+    
     createWindow()
 
     app.on('activate', () => {
