@@ -1126,7 +1126,7 @@ const App: React.FC = () => {
         
         {(activeTab?.messages || [])
           .filter(m => m.role !== 'system')
-          .filter(m => m.role === 'user' || m.content.trim() || m.isStreaming)
+          .filter(m => m.role === 'user' || m.content.trim())
           .map((message) => (
           <div 
             key={message.id}
@@ -1187,6 +1187,24 @@ const App: React.FC = () => {
             </div>
           </div>
         ))}
+        
+        {/* Thinking indicator when processing but no streaming content yet */}
+        {activeTab?.isProcessing && !activeTab?.messages.some(m => m.isStreaming && m.content) && (
+          <div className="flex justify-start">
+            <div className="bg-[#21262d] text-[#e6edf3] rounded-lg px-4 py-2.5">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce"></span>
+                </span>
+                <span className="text-[#8b949e]">
+                  {activeTab?.currentIntent || 'Thinking...'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         
         <div ref={messagesEndRef} />
       </div>
