@@ -66,6 +66,8 @@ const generateTabName = () => `Session ${++tabCounter}`
 // Format tool output into a summary string like CLI does
 const formatToolOutput = (toolName: string, input: Record<string, unknown>, output: unknown): string => {
   const out = output as Record<string, unknown> | string | undefined
+  const path = input.path as string | undefined
+  const shortPath = path ? path.split('/').slice(-2).join('/') : ''
   
   if (toolName === 'grep') {
     if (typeof out === 'object' && out?.output) {
@@ -85,18 +87,19 @@ const formatToolOutput = (toolName: string, input: Record<string, unknown>, outp
   
   if (toolName === 'view') {
     const range = input.view_range as number[] | undefined
-    if (range) {
-      return `${range[1] - range[0] + 1} lines read`
+    if (range && range.length >= 2) {
+      const lineCount = range[1] === -1 ? 'rest of file' : `${range[1] - range[0] + 1} lines`
+      return shortPath ? `${shortPath} (${lineCount})` : `${lineCount} read`
     }
-    return 'File read'
+    return shortPath ? `${shortPath} read` : 'File read'
   }
   
   if (toolName === 'edit') {
-    return 'File edited'
+    return shortPath ? `${shortPath} edited` : 'File edited'
   }
   
   if (toolName === 'create') {
-    return 'File created'
+    return shortPath ? `${shortPath} created` : 'File created'
   }
   
   if (toolName === 'bash') {
@@ -109,6 +112,14 @@ const formatToolOutput = (toolName: string, input: Record<string, unknown>, outp
   
   if (toolName === 'web_fetch') {
     return 'Page fetched'
+  }
+  
+  if (toolName === 'read_bash') {
+    return 'Output read'
+  }
+  
+  if (toolName === 'write_bash') {
+    return 'Input sent'
   }
   
   return 'Done'
@@ -133,6 +144,10 @@ const App: React.FC = () => {
   const [showRightPanel, setShowRightPanel] = useState(false)
   const [showAlwaysAllowed, setShowAlwaysAllowed] = useState(false)
   const [showEditedFiles, setShowEditedFiles] = useState(true)
+  const [showCommitModal, setShowCommitModal] = useState(false)
+  const [commitMessage, setCommitMessage] = useState('')
+  const [isCommitting, setIsCommitting] = useState(false)
+  const [commitError, setCommitError] = useState<string | null>(null)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -373,6 +388,8 @@ const App: React.FC = () => {
       const name = toolName || 'unknown'
       const id = toolCallId || generateId()
       
+      console.log(`[Tool Start] ${name}: toolCallId=${toolCallId}, id=${id}, input=`, input)
+      
       // Capture intent from report_intent tool
       if (name === 'report_intent') {
         const intent = input?.intent as string | undefined
@@ -400,19 +417,29 @@ const App: React.FC = () => {
       const { sessionId, toolCallId, toolName, input, output } = data
       const name = toolName || 'unknown'
       
+      console.log(`[Tool End] ${name}:`, { toolCallId, input, hasInput: !!input })
+      
       // Skip internal tools
       if (name === 'report_intent' || name === 'update_todo') return
       
       setTabs(prev => prev.map(tab => {
         if (tab.id !== sessionId) return tab
         
+        // Get the tool's input from activeTools (more reliable than event data)
+        const activeTool = tab.activeTools.find(t => t.toolCallId === toolCallId)
+        const toolInput = input || activeTool?.input
+        
+        console.log(`[Tool End] Looking for file op: name=${name}, toolInput=`, toolInput, 'activeTool=', activeTool)
+        
         // Track edited/created files
         const isFileOperation = name === 'edit' || name === 'create'
         let newEditedFiles = tab.editedFiles
-        if (isFileOperation && input) {
-          const path = input.path as string | undefined
+        if (isFileOperation && toolInput) {
+          const path = toolInput.path as string | undefined
+          console.log(`[Tool End] File operation detected: path=${path}`)
           if (path && !tab.editedFiles.includes(path)) {
             newEditedFiles = [...tab.editedFiles, path]
+            console.log(`[Tool End] Added to editedFiles:`, newEditedFiles)
           }
         }
         
@@ -420,7 +447,9 @@ const App: React.FC = () => {
           ...tab,
           editedFiles: newEditedFiles,
           activeTools: tab.activeTools.map(t => 
-            t.toolCallId === toolCallId ? { ...t, status: 'done' as const, output } : t
+            t.toolCallId === toolCallId 
+              ? { ...t, status: 'done' as const, input: toolInput || t.input, output } 
+              : t
           )
         }
       }))
@@ -565,6 +594,47 @@ const App: React.FC = () => {
       updateTab(activeTab.id, { alwaysAllowed: list })
     } catch (error) {
       console.error('Failed to fetch always-allowed:', error)
+    }
+  }
+
+  const handleOpenCommitModal = async () => {
+    if (!activeTab || activeTab.editedFiles.length === 0) return
+    
+    setCommitError(null)
+    setIsCommitting(false)
+    
+    // Generate a commit message based on edited files
+    const fileNames = activeTab.editedFiles.map(f => f.split('/').pop()).join(', ')
+    const defaultMessage = `Update ${fileNames}`
+    setCommitMessage(defaultMessage)
+    setShowCommitModal(true)
+  }
+
+  const handleCommitAndPush = async () => {
+    if (!activeTab || !commitMessage.trim()) return
+    
+    setIsCommitting(true)
+    setCommitError(null)
+    
+    try {
+      const result = await window.electronAPI.git.commitAndPush(
+        activeTab.cwd,
+        activeTab.editedFiles,
+        commitMessage.trim()
+      )
+      
+      if (result.success) {
+        // Clear the edited files list
+        updateTab(activeTab.id, { editedFiles: [] })
+        setShowCommitModal(false)
+        setCommitMessage('')
+      } else {
+        setCommitError(result.error || 'Commit failed')
+      }
+    } catch (error) {
+      setCommitError(String(error))
+    } finally {
+      setIsCommitting(false)
     }
   }
 
@@ -942,10 +1012,10 @@ const App: React.FC = () => {
           {/* Open Tabs */}
           <div className="flex-1 overflow-y-auto">
             {tabs.map((tab) => (
-              <button
+              <div
                 key={tab.id}
                 onClick={() => handleSwitchTab(tab.id)}
-                className={`group w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left ${
+                className={`group w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors text-left cursor-pointer ${
                   tab.id === activeTabId 
                     ? 'bg-[#161b22] text-[#e6edf3] border-l-2 border-l-[#58a6ff]' 
                     : 'text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] border-l-2 border-l-transparent'
@@ -971,7 +1041,7 @@ const App: React.FC = () => {
                     <path d="M18 6L6 18M6 6l12 12"/>
                   </svg>
                 </button>
-              </button>
+              </div>
             ))}
           </div>
           
@@ -1088,16 +1158,6 @@ const App: React.FC = () => {
                     {message.content}
                   </ReactMarkdown>
                 ) : null}
-                {message.isStreaming && !message.content && (
-                  <span className="text-[#8b949e] italic flex items-center gap-2">
-                    <span className="flex gap-1">
-                      <span className="w-2 h-2 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                      <span className="w-2 h-2 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                      <span className="w-2 h-2 bg-[#58a6ff] rounded-full animate-bounce"></span>
-                    </span>
-                    {activeTab?.currentIntent || 'Thinking...'}
-                  </span>
-                )}
                 {message.isStreaming && message.content && (
                   <span className="inline-block w-2 h-4 ml-1 bg-[#58a6ff] animate-pulse rounded-sm" />
                 )}
@@ -1123,26 +1183,47 @@ const App: React.FC = () => {
                 {activeTab?.activeTools.map((tool) => {
                   const input = tool.input || {}
                   const path = input.path as string | undefined
+                  const shortPath = path ? path.split('/').slice(-2).join('/') : ''
                   const isEdit = tool.toolName === 'edit'
                   const isCreate = tool.toolName === 'create'
                   const isBash = tool.toolName === 'bash'
                   const isGrep = tool.toolName === 'grep'
                   const isGlob = tool.toolName === 'glob'
                   const isView = tool.toolName === 'view'
+                  const isReadBash = tool.toolName === 'read_bash'
+                  const isWriteBash = tool.toolName === 'write_bash'
                   
-                  // Build description based on tool type
+                  // Build description based on tool type - show all relevant input
                   let description = ''
                   if (isGrep) {
-                    description = `"${input.pattern || ''}" ${path ? `(${path.split('/').slice(-2).join('/')})` : ''}`
+                    const pattern = input.pattern as string || ''
+                    const grepPath = path || input.glob as string || ''
+                    const shortGrepPath = grepPath ? grepPath.split('/').slice(-2).join('/') : ''
+                    description = pattern ? `"${pattern}"` : ''
+                    if (shortGrepPath) description += ` (${shortGrepPath})`
                   } else if (isGlob) {
-                    description = `${input.pattern || ''}`
-                  } else if (isView || isEdit || isCreate) {
-                    description = path || ''
+                    description = (input.pattern as string) || ''
+                  } else if (isView) {
+                    const range = input.view_range as number[] | undefined
+                    if (range && range.length >= 2) {
+                      description = `${shortPath || path || 'file'} lines ${range[0]}-${range[1] === -1 ? 'end' : range[1]}`
+                    } else {
+                      description = shortPath || path || ''
+                    }
+                  } else if (isEdit || isCreate) {
+                    description = shortPath || path || ''
                   } else if (isBash) {
                     const cmd = (input.command as string || '').slice(0, 60)
-                    description = `$ ${cmd}${(input.command as string || '').length > 60 ? '...' : ''}`
+                    const desc = input.description as string || ''
+                    description = desc ? desc : (cmd ? `$ ${cmd}${(input.command as string || '').length > 60 ? '...' : ''}` : '')
+                  } else if (isReadBash || isWriteBash) {
+                    description = `session ${input.sessionId || ''}`
                   } else if (tool.toolName === 'web_fetch') {
                     description = (input.url as string || '').slice(0, 50)
+                  } else {
+                    // Fallback: show first string input value
+                    const firstVal = Object.values(input).find(v => typeof v === 'string') as string | undefined
+                    if (firstVal) description = firstVal.slice(0, 60)
                   }
                   
                   return (
@@ -1390,25 +1471,40 @@ const App: React.FC = () => {
               
               {/* Edited Files Section */}
               <div className="flex-1 overflow-y-auto">
-                <button
-                  onClick={() => setShowEditedFiles(!showEditedFiles)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors border-b border-[#21262d]"
-                >
-                  <svg 
-                    width="10" height="10" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2"
-                    className={`transition-transform ${showEditedFiles ? 'rotate-90' : ''}`}
+                <div className="flex items-center border-b border-[#21262d]">
+                  <button
+                    onClick={() => setShowEditedFiles(!showEditedFiles)}
+                    className="flex-1 flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors"
                   >
-                    <path d="M9 18l6-6-6-6"/>
-                  </svg>
-                  <span>Edited Files</span>
+                    <svg 
+                      width="10" height="10" 
+                      viewBox="0 0 24 24" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      strokeWidth="2"
+                      className={`transition-transform ${showEditedFiles ? 'rotate-90' : ''}`}
+                    >
+                      <path d="M9 18l6-6-6-6"/>
+                    </svg>
+                    <span>Edited Files</span>
+                    {(activeTab?.editedFiles.length || 0) > 0 && (
+                      <span className="text-[#3fb950]">({activeTab?.editedFiles.length})</span>
+                    )}
+                  </button>
                   {(activeTab?.editedFiles.length || 0) > 0 && (
-                    <span className="ml-auto text-[#3fb950]">({activeTab?.editedFiles.length})</span>
+                    <button
+                      onClick={handleOpenCommitModal}
+                      className="px-2 py-1 mr-1 text-[10px] text-[#58a6ff] hover:text-[#79c0ff] hover:bg-[#21262d] rounded transition-colors"
+                      title="Commit and push changes"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="4"/>
+                        <line x1="12" y1="2" x2="12" y2="8"/>
+                        <line x1="12" y1="16" x2="12" y2="22"/>
+                      </svg>
+                    </button>
                   )}
-                </button>
+                </div>
                 {showEditedFiles && activeTab && (
                   <div className="border-b border-[#21262d]">
                     {activeTab.editedFiles.length === 0 ? (
@@ -1504,6 +1600,91 @@ const App: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Commit Modal */}
+      {showCommitModal && activeTab && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl w-[500px] max-w-[90%]">
+            <div className="px-4 py-3 border-b border-[#30363d] flex items-center justify-between">
+              <h3 className="text-sm font-medium text-[#e6edf3]">Commit & Push Changes</h3>
+              <button
+                onClick={() => setShowCommitModal(false)}
+                className="text-[#8b949e] hover:text-[#e6edf3] transition-colors"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-4">
+              {/* Files to commit */}
+              <div className="mb-3">
+                <div className="text-xs text-[#8b949e] mb-2">Files to commit ({activeTab.editedFiles.length}):</div>
+                <div className="bg-[#0d1117] rounded border border-[#21262d] max-h-32 overflow-y-auto">
+                  {activeTab.editedFiles.map((filePath) => (
+                    <div key={filePath} className="px-3 py-1.5 text-xs text-[#3fb950] font-mono truncate" title={filePath}>
+                      {filePath}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Commit message */}
+              <div className="mb-3">
+                <label className="text-xs text-[#8b949e] mb-2 block">Commit message:</label>
+                <textarea
+                  value={commitMessage}
+                  onChange={(e) => setCommitMessage(e.target.value)}
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded px-3 py-2 text-sm text-[#e6edf3] placeholder-[#484f58] focus:border-[#58a6ff] outline-none resize-none"
+                  rows={3}
+                  placeholder="Enter commit message..."
+                  autoFocus
+                />
+              </div>
+              
+              {/* Error message */}
+              {commitError && (
+                <div className="mb-3 px-3 py-2 bg-[#f8514926] border border-[#f85149] rounded text-xs text-[#f85149]">
+                  {commitError}
+                </div>
+              )}
+              
+              {/* Actions */}
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowCommitModal(false)}
+                  className="px-3 py-1.5 text-xs text-[#8b949e] hover:text-[#e6edf3] transition-colors"
+                  disabled={isCommitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCommitAndPush}
+                  disabled={!commitMessage.trim() || isCommitting}
+                  className="px-3 py-1.5 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-2"
+                >
+                  {isCommitting ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      Pushing...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="4"/>
+                        <line x1="12" y1="2" x2="12" y2="8"/>
+                        <line x1="12" y1="16" x2="12" y2="22"/>
+                      </svg>
+                      Commit & Push
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

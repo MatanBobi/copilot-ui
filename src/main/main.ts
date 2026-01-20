@@ -1,5 +1,9 @@
 import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
 import { join } from 'path'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 import { CopilotClient, CopilotSession, PermissionRequest, PermissionRequestResult } from '@github/copilot-sdk'
 import Store from 'electron-store'
 import log from 'electron-log/main'
@@ -308,21 +312,21 @@ async function createNewSession(model?: string, cwd?: string): Promise<string> {
     } else if (event.type === 'session.idle') {
       mainWindow.webContents.send('copilot:idle', { sessionId })
     } else if (event.type === 'tool.execution_start') {
-      console.log(`[${sessionId}] Tool start:`, event.data.toolName, event.data.input)
+      console.log(`[${sessionId}] Tool start FULL:`, JSON.stringify(event.data, null, 2))
       mainWindow.webContents.send('copilot:tool-start', { 
         sessionId, 
         toolCallId: event.data.toolCallId,
         toolName: event.data.toolName,
-        input: event.data.input  // Include tool input (path, old_str, new_str, etc.)
+        input: event.data.arguments || event.data.input || (event.data as Record<string, unknown>)
       })
     } else if (event.type === 'tool.execution_complete') {
-      console.log(`[${sessionId}] Tool end:`, event.data.toolCallId, event.data.output)
+      console.log(`[${sessionId}] Tool end FULL:`, JSON.stringify(event.data, null, 2))
       mainWindow.webContents.send('copilot:tool-end', { 
         sessionId, 
         toolCallId: event.data.toolCallId,
         toolName: event.data.toolName,
-        input: event.data.input,  // Include tool input for tracking edited files
-        output: event.data.output  // Include tool output
+        input: event.data.arguments || event.data.input || (event.data as Record<string, unknown>),
+        output: event.data.output
       })
     } else if (event.type === 'tool.confirmation_requested') {
       console.log(`[${sessionId}] Confirmation requested:`, event.data)
@@ -397,20 +401,20 @@ async function initCopilot(): Promise<void> {
           } else if (event.type === 'session.idle') {
             mainWindow.webContents.send('copilot:idle', { sessionId })
           } else if (event.type === 'tool.execution_start') {
-            console.log(`[${sessionId}] Tool start:`, event.data.toolName, event.data.input)
+            console.log(`[${sessionId}] Tool start FULL:`, JSON.stringify(event.data, null, 2))
             mainWindow.webContents.send('copilot:tool-start', { 
               sessionId, 
               toolCallId: event.data.toolCallId, 
               toolName: event.data.toolName,
-              input: event.data.input
+              input: event.data.arguments || event.data.input || (event.data as Record<string, unknown>)
             })
           } else if (event.type === 'tool.execution_complete') {
-            console.log(`[${sessionId}] Tool end:`, event.data.toolCallId, event.data.output)
+            console.log(`[${sessionId}] Tool end FULL:`, JSON.stringify(event.data, null, 2))
             mainWindow.webContents.send('copilot:tool-end', { 
               sessionId, 
               toolCallId: event.data.toolCallId, 
               toolName: event.data.toolName,
-              input: event.data.input,
+              input: event.data.arguments || event.data.input || (event.data as Record<string, unknown>),
               output: event.data.output
             })
           }
@@ -768,6 +772,47 @@ ipcMain.handle('copilot:saveOpenSessions', async (_event, openSessions: StoredSe
   return { success: true }
 })
 
+// Git operations - get diff for files
+ipcMain.handle('git:getDiff', async (_event, data: { cwd: string; files: string[] }) => {
+  try {
+    // Get the diff for the specified files
+    const fileArgs = data.files.map(f => `"${f}"`).join(' ')
+    const { stdout } = await execAsync(`git diff HEAD -- ${fileArgs}`, { cwd: data.cwd })
+    
+    // If no diff (files might be new/untracked), get their status
+    if (!stdout.trim()) {
+      const { stdout: status } = await execAsync(`git status --porcelain -- ${fileArgs}`, { cwd: data.cwd })
+      return { diff: status || 'No changes detected', success: true }
+    }
+    
+    return { diff: stdout, success: true }
+  } catch (error) {
+    console.error('Git diff failed:', error)
+    return { diff: '', success: false, error: String(error) }
+  }
+})
+
+// Git operations - commit and push
+ipcMain.handle('git:commitAndPush', async (_event, data: { cwd: string; files: string[]; message: string }) => {
+  try {
+    // Stage the files
+    for (const file of data.files) {
+      await execAsync(`git add "${file}"`, { cwd: data.cwd })
+    }
+    
+    // Commit with the message
+    await execAsync(`git commit -m "${data.message.replace(/"/g, '\\"')}"`, { cwd: data.cwd })
+    
+    // Push
+    await execAsync('git push', { cwd: data.cwd })
+    
+    return { success: true }
+  } catch (error) {
+    console.error('Git commit/push failed:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
 // Resume a previous session (from the history list)
 ipcMain.handle('copilot:resumePreviousSession', async (_event, sessionId: string) => {
   // Check if already resumed
@@ -798,20 +843,20 @@ ipcMain.handle('copilot:resumePreviousSession', async (_event, sessionId: string
     } else if (event.type === 'session.idle') {
       mainWindow.webContents.send('copilot:idle', { sessionId })
     } else if (event.type === 'tool.execution_start') {
-      console.log(`[${sessionId}] Tool start:`, event.data.toolName, event.data.input)
+      console.log(`[${sessionId}] Tool start FULL:`, JSON.stringify(event.data, null, 2))
       mainWindow.webContents.send('copilot:tool-start', { 
         sessionId, 
         toolCallId: event.data.toolCallId, 
         toolName: event.data.toolName,
-        input: event.data.input
+        input: event.data.arguments || event.data.input || (event.data as Record<string, unknown>)
       })
     } else if (event.type === 'tool.execution_complete') {
-      console.log(`[${sessionId}] Tool end:`, event.data.toolCallId, event.data.output)
+      console.log(`[${sessionId}] Tool end FULL:`, JSON.stringify(event.data, null, 2))
       mainWindow.webContents.send('copilot:tool-end', { 
         sessionId, 
         toolCallId: event.data.toolCallId, 
         toolName: event.data.toolName,
-        input: event.data.input,
+        input: event.data.arguments || event.data.input || (event.data as Record<string, unknown>),
         output: event.data.output
       })
     }

@@ -121,6 +121,16 @@ const electronAPI = {
     quit: (): void => {
       ipcRenderer.send('window:quit')
     }
+  },
+
+  // Git operations
+  git: {
+    getDiff: (cwd: string, files: string[]): Promise<{ diff: string; success: boolean; error?: string }> => {
+      return ipcRenderer.invoke('git:getDiff', { cwd, files })
+    },
+    commitAndPush: (cwd: string, files: string[], message: string): Promise<{ success: boolean; error?: string }> => {
+      return ipcRenderer.invoke('git:commitAndPush', { cwd, files, message })
+    }
   }
 }
 
