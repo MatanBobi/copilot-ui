@@ -141,7 +141,6 @@ const App: React.FC = () => {
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [previousSessions, setPreviousSessions] = useState<PreviousSession[]>([])
   const [showPreviousSessions, setShowPreviousSessions] = useState(false)
-  const [showRightPanel, setShowRightPanel] = useState(false)
   const [showAlwaysAllowed, setShowAlwaysAllowed] = useState(false)
   const [showEditedFiles, setShowEditedFiles] = useState(true)
   const [showCommitModal, setShowCommitModal] = useState(false)
@@ -1111,7 +1110,7 @@ const App: React.FC = () => {
         
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          {/* Messages Area */}
+          {/* Messages Area - Conversation Only */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
         {activeTab?.messages.length === 0 && status === 'connected' && (
           <div className="flex flex-col items-center justify-center min-h-full text-center -m-4 p-4">
@@ -1134,7 +1133,7 @@ const App: React.FC = () => {
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div 
-              className={`max-w-[80%] rounded-lg px-4 py-2.5 overflow-hidden ${
+              className={`max-w-[85%] rounded-lg px-4 py-2.5 overflow-hidden ${
                 message.role === 'user' 
                   ? 'bg-[#238636] text-white' 
                   : 'bg-[#21262d] text-[#e6edf3]'
@@ -1189,210 +1188,6 @@ const App: React.FC = () => {
           </div>
         ))}
         
-        {/* CLI-style Activity Log */}
-        {(activeTab?.isProcessing || (activeTab?.activeTools?.length || 0) > 0) && (
-          <div className="flex justify-start">
-            <div className="bg-[#1c2128] rounded-lg border border-[#30363d] overflow-hidden max-w-[85%] min-w-[300px]">
-              {/* Current Intent Header */}
-              {activeTab?.currentIntent && (
-                <div className="px-3 py-2 bg-[#161b22] border-b border-[#30363d] flex items-center gap-2">
-                  <span className="text-[#58a6ff]">●</span>
-                  <span className="text-xs text-[#e6edf3] font-medium">{activeTab.currentIntent}</span>
-                </div>
-              )}
-              
-              {/* Tool Log */}
-              <div className="max-h-64 overflow-y-auto">
-                {activeTab?.activeTools.map((tool) => {
-                  const input = tool.input || {}
-                  const path = input.path as string | undefined
-                  const shortPath = path ? path.split('/').slice(-2).join('/') : ''
-                  const isEdit = tool.toolName === 'edit'
-                  const isCreate = tool.toolName === 'create'
-                  const isBash = tool.toolName === 'bash'
-                  const isGrep = tool.toolName === 'grep'
-                  const isGlob = tool.toolName === 'glob'
-                  const isView = tool.toolName === 'view'
-                  const isReadBash = tool.toolName === 'read_bash'
-                  const isWriteBash = tool.toolName === 'write_bash'
-                  
-                  // Build description based on tool type - show all relevant input
-                  let description = ''
-                  if (isGrep) {
-                    const pattern = input.pattern as string || ''
-                    const grepPath = path || input.glob as string || ''
-                    const shortGrepPath = grepPath ? grepPath.split('/').slice(-2).join('/') : ''
-                    description = pattern ? `"${pattern}"` : ''
-                    if (shortGrepPath) description += ` (${shortGrepPath})`
-                  } else if (isGlob) {
-                    description = (input.pattern as string) || ''
-                  } else if (isView) {
-                    const range = input.view_range as number[] | undefined
-                    if (range && range.length >= 2) {
-                      description = `${shortPath || path || 'file'} lines ${range[0]}-${range[1] === -1 ? 'end' : range[1]}`
-                    } else {
-                      description = shortPath || path || ''
-                    }
-                  } else if (isEdit || isCreate) {
-                    description = shortPath || path || ''
-                  } else if (isBash) {
-                    const cmd = (input.command as string || '').slice(0, 60)
-                    const desc = input.description as string || ''
-                    description = desc ? desc : (cmd ? `$ ${cmd}${(input.command as string || '').length > 60 ? '...' : ''}` : '')
-                  } else if (isReadBash || isWriteBash) {
-                    description = `session ${input.sessionId || ''}`
-                  } else if (tool.toolName === 'web_fetch') {
-                    description = (input.url as string || '').slice(0, 50)
-                  } else {
-                    // Fallback: show first string input value
-                    const firstVal = Object.values(input).find(v => typeof v === 'string') as string | undefined
-                    if (firstVal) description = firstVal.slice(0, 60)
-                  }
-                  
-                  return (
-                    <div 
-                      key={tool.toolCallId}
-                      className="px-3 py-1.5 border-b border-[#21262d] last:border-b-0"
-                    >
-                      {/* Tool line */}
-                      <div className="flex items-start gap-2 text-xs">
-                        {tool.status === 'running' ? (
-                          <span className="text-[#d29922] shrink-0 mt-0.5">○</span>
-                        ) : (
-                          <span className="text-[#3fb950] shrink-0">✓</span>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <span className={`font-medium ${tool.status === 'done' ? 'text-[#e6edf3]' : 'text-[#8b949e]'}`}>
-                            {tool.toolName.charAt(0).toUpperCase() + tool.toolName.slice(1)}
-                          </span>
-                          {description && (
-                            <span className="text-[#8b949e] font-mono ml-1 truncate">
-                              {description}
-                            </span>
-                          )}
-                          
-                          {/* Output summary on new line */}
-                          {tool.status === 'done' && (
-                            <div className="text-[#6e7681] mt-0.5 flex items-center gap-1">
-                              <span className="text-[#30363d]">└</span>
-                              <span>{formatToolOutput(tool.toolName, input, tool.output)}</span>
-                            </div>
-                          )}
-                          
-                          {/* Edit diff preview */}
-                          {isEdit && tool.status === 'done' && input.old_str && (
-                            <div className="mt-1 text-[10px] font-mono pl-3 border-l border-[#30363d]">
-                              <div className="text-[#f85149] truncate">
-                                − {(input.old_str as string).split('\n')[0].slice(0, 50)}
-                              </div>
-                              {input.new_str !== undefined && (
-                                <div className="text-[#3fb950] truncate">
-                                  + {(input.new_str as string).split('\n')[0].slice(0, 50)}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-              
-              {/* Running indicator if no tools but still processing */}
-              {activeTab?.isProcessing && (activeTab?.activeTools?.length || 0) === 0 && !activeTab?.currentIntent && (
-                <div className="px-3 py-2 flex items-center gap-2">
-                  <span className="flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                    <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                    <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce"></span>
-                  </span>
-                  <span className="text-xs text-[#8b949e]">Processing...</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        
-        {/* Permission Confirmation Dialog */}
-        {activeTab?.pendingConfirmation && (
-          <div className="flex justify-start">
-            <div className="max-w-[90%] bg-[#1c2128] rounded-lg border border-[#d29922] p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-[#d29922]">⚠️</span>
-                <span className="text-[#e6edf3] text-sm">
-                  {activeTab.pendingConfirmation.isOutOfScope ? (
-                    <>Allow reading outside workspace?</>
-                  ) : activeTab.pendingConfirmation.kind === 'write' ? (
-                    <>Allow file changes?</>
-                  ) : activeTab.pendingConfirmation.kind === 'shell' ? (
-                    <>Allow <strong className="font-bold">{activeTab.pendingConfirmation.executable || 'command'}</strong>?</>
-                  ) : (
-                    <>Allow <strong className="font-bold">{activeTab.pendingConfirmation.kind}</strong>?</>
-                  )}
-                </span>
-              </div>
-              {activeTab.pendingConfirmation.isOutOfScope && (
-                <div className="text-xs text-[#8b949e] mb-2">
-                  This path is outside your trusted workspace
-                </div>
-              )}
-              {/* File path for write permissions */}
-              {activeTab.pendingConfirmation.path && (
-                <div className="text-xs text-[#58a6ff] mb-2 font-mono">📄 {activeTab.pendingConfirmation.path}</div>
-              )}
-              {/* Full command for shell permissions */}
-              {activeTab.pendingConfirmation.fullCommandText && (
-                <pre className="bg-[#0d1117] rounded p-2 my-2 overflow-x-auto text-xs text-[#e6edf3] border border-[#30363d] max-h-40">
-                  <code>{activeTab.pendingConfirmation.fullCommandText}</code>
-                </pre>
-              )}
-              <div className="flex gap-2 mt-3">
-                {activeTab.pendingConfirmation.isOutOfScope ? (
-                  <>
-                    {/* Out of scope read: only Yes/No, no "always" option */}
-                    <button
-                      onClick={() => handleConfirmation('approved')}
-                      className="px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium transition-colors"
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => handleConfirmation('denied')}
-                      className="px-3 py-1.5 rounded bg-[#21262d] hover:bg-[#30363d] text-[#f85149] text-xs font-medium border border-[#30363d] transition-colors"
-                    >
-                      No
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {/* In-scope permission: Allow Once / Always Allow / Deny */}
-                    <button
-                      onClick={() => handleConfirmation('approved')}
-                      className="px-3 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-medium transition-colors"
-                    >
-                      Allow Once
-                    </button>
-                    <button
-                      onClick={() => handleConfirmation('always')}
-                      className="px-3 py-1.5 rounded bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] text-xs font-medium border border-[#30363d] transition-colors"
-                      title={`Always allow ${activeTab.pendingConfirmation.executable || activeTab.pendingConfirmation.kind} for this session`}
-                    >
-                      Always Allow
-                    </button>
-                    <button
-                      onClick={() => handleConfirmation('denied')}
-                      className="px-3 py-1.5 rounded bg-[#21262d] hover:bg-[#30363d] text-[#f85149] text-xs font-medium border border-[#30363d] transition-colors"
-                    >
-                      Deny
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-        
         <div ref={messagesEndRef} />
       </div>
 
@@ -1439,74 +1234,213 @@ const App: React.FC = () => {
       </div>
         </div>
         
-        {/* Right Panel - Session Info */}
-        <div className="flex border-l border-[#30363d] shrink-0">
-          {/* Toggle Button */}
-          <button
-            onClick={() => {
-              setShowRightPanel(!showRightPanel)
-              if (!showRightPanel) refreshAlwaysAllowed()
-            }}
-            className="flex items-center justify-center w-8 text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors"
-            title={showRightPanel ? "Hide session info" : "Show session info"}
-          >
-            <svg 
-              width="14" height="14" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2"
-              className={`transition-transform ${showRightPanel ? 'rotate-180' : ''}`}
-            >
-              <path d="M15 18l-6-6 6-6"/>
-            </svg>
-          </button>
+        {/* Right Panel - Activity & Session Info */}
+        <div className="w-72 border-l border-[#30363d] flex flex-col shrink-0 bg-[#0d1117]">
+          {/* Activity Header with Intent */}
+          <div className="px-3 py-2 border-b border-[#30363d] bg-[#161b22]">
+            <div className="flex items-center gap-2">
+              {activeTab?.isProcessing ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-[#d29922] animate-pulse" />
+                  <span className="text-xs font-medium text-[#e6edf3] truncate">
+                    {activeTab?.currentIntent || 'Working...'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-[#3fb950]" />
+                  <span className="text-xs font-medium text-[#8b949e]">Ready</span>
+                </>
+              )}
+            </div>
+          </div>
           
-          {/* Collapsible Panel Content */}
-          {showRightPanel && (
-            <div className="w-56 flex flex-col overflow-hidden">
-              <div className="px-3 py-2 border-b border-[#30363d]">
-                <h3 className="text-xs font-medium text-[#e6edf3]">Session Info</h3>
+          {/* Tool Activity Log */}
+          <div className="flex-1 overflow-y-auto">
+            {/* Permission Confirmation - Top Priority */}
+            {activeTab?.pendingConfirmation && (
+              <div className="p-3 bg-[#1c2128] border-b border-[#d29922]">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[#d29922]">⚠️</span>
+                  <span className="text-[#e6edf3] text-xs font-medium">
+                    {activeTab.pendingConfirmation.isOutOfScope ? (
+                      <>Allow reading outside workspace?</>
+                    ) : activeTab.pendingConfirmation.kind === 'write' ? (
+                      <>Allow file changes?</>
+                    ) : activeTab.pendingConfirmation.kind === 'shell' ? (
+                      <>Allow <strong>{activeTab.pendingConfirmation.executable || 'command'}</strong>?</>
+                    ) : (
+                      <>Allow <strong>{activeTab.pendingConfirmation.kind}</strong>?</>
+                    )}
+                  </span>
+                </div>
+                {activeTab.pendingConfirmation.isOutOfScope && (
+                  <div className="text-[10px] text-[#8b949e] mb-2">
+                    Path is outside trusted workspace
+                  </div>
+                )}
+                {activeTab.pendingConfirmation.path && (
+                  <div className="text-[10px] text-[#58a6ff] mb-2 font-mono truncate" title={activeTab.pendingConfirmation.path}>
+                    📄 {activeTab.pendingConfirmation.path}
+                  </div>
+                )}
+                {activeTab.pendingConfirmation.fullCommandText && (
+                  <pre className="bg-[#0d1117] rounded p-2 my-2 overflow-x-auto text-[10px] text-[#e6edf3] border border-[#30363d] max-h-24">
+                    <code>{activeTab.pendingConfirmation.fullCommandText}</code>
+                  </pre>
+                )}
+                <div className="flex gap-2 mt-2">
+                  {activeTab.pendingConfirmation.isOutOfScope ? (
+                    <>
+                      <button
+                        onClick={() => handleConfirmation('approved')}
+                        className="flex-1 px-2 py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-[10px] font-medium transition-colors"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => handleConfirmation('denied')}
+                        className="flex-1 px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#f85149] text-[10px] font-medium border border-[#30363d] transition-colors"
+                      >
+                        No
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleConfirmation('approved')}
+                        className="px-2 py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-[10px] font-medium transition-colors"
+                      >
+                        Once
+                      </button>
+                      <button
+                        onClick={() => handleConfirmation('always')}
+                        className="px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] text-[10px] font-medium border border-[#30363d] transition-colors"
+                      >
+                        Always
+                      </button>
+                      <button
+                        onClick={() => handleConfirmation('denied')}
+                        className="px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#f85149] text-[10px] font-medium border border-[#30363d] transition-colors"
+                      >
+                        Deny
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              
+            )}
+            
+            {/* Tools List */}
+            {(activeTab?.activeTools?.length || 0) > 0 && (
+              <div className="border-b border-[#21262d]">
+                {activeTab?.activeTools.map((tool) => {
+                  const input = tool.input || {}
+                  const path = input.path as string | undefined
+                  const shortPath = path ? path.split('/').slice(-2).join('/') : ''
+                  const isEdit = tool.toolName === 'edit'
+                  const isGrep = tool.toolName === 'grep'
+                  const isGlob = tool.toolName === 'glob'
+                  const isView = tool.toolName === 'view'
+                  const isBash = tool.toolName === 'bash'
+                  const isReadBash = tool.toolName === 'read_bash'
+                  const isWriteBash = tool.toolName === 'write_bash'
+                  
+                  let description = ''
+                  if (isGrep) {
+                    const pattern = input.pattern as string || ''
+                    description = pattern ? `"${pattern}"` : ''
+                  } else if (isGlob) {
+                    description = (input.pattern as string) || ''
+                  } else if (isView) {
+                    description = shortPath || path || ''
+                  } else if (isEdit || tool.toolName === 'create') {
+                    description = shortPath || path || ''
+                  } else if (isBash) {
+                    const desc = input.description as string || ''
+                    const cmd = (input.command as string || '').slice(0, 40)
+                    description = desc || (cmd ? `$ ${cmd}...` : '')
+                  } else if (isReadBash || isWriteBash) {
+                    description = `session`
+                  } else if (tool.toolName === 'web_fetch') {
+                    description = (input.url as string || '').slice(0, 30)
+                  }
+                  
+                  return (
+                    <div key={tool.toolCallId} className="px-3 py-1.5 border-b border-[#161b22] last:border-b-0">
+                      <div className="flex items-start gap-2 text-xs">
+                        {tool.status === 'running' ? (
+                          <span className="text-[#d29922] shrink-0 mt-0.5">○</span>
+                        ) : (
+                          <span className="text-[#3fb950] shrink-0">✓</span>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <span className={`font-medium ${tool.status === 'done' ? 'text-[#e6edf3]' : 'text-[#8b949e]'}`}>
+                            {tool.toolName.charAt(0).toUpperCase() + tool.toolName.slice(1)}
+                          </span>
+                          {description && (
+                            <span className="text-[#6e7681] font-mono ml-1 text-[10px] truncate block">
+                              {description}
+                            </span>
+                          )}
+                          {tool.status === 'done' && (
+                            <div className="text-[#6e7681] text-[10px] mt-0.5">
+                              {formatToolOutput(tool.toolName, input, tool.output)}
+                            </div>
+                          )}
+                          {isEdit && tool.status === 'done' && input.old_str && (
+                            <div className="mt-1 text-[10px] font-mono pl-2 border-l border-[#30363d]">
+                              <div className="text-[#f85149] truncate">− {(input.old_str as string).split('\n')[0].slice(0, 35)}</div>
+                              {input.new_str !== undefined && (
+                                <div className="text-[#3fb950] truncate">+ {(input.new_str as string).split('\n')[0].slice(0, 35)}</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            
+            {/* Processing indicator when no tools visible */}
+            {activeTab?.isProcessing && (activeTab?.activeTools?.length || 0) === 0 && (
+              <div className="px-3 py-3 flex items-center gap-2 border-b border-[#21262d]">
+                <span className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="w-1.5 h-1.5 bg-[#58a6ff] rounded-full animate-bounce"></span>
+                </span>
+                <span className="text-xs text-[#8b949e]">Thinking...</span>
+              </div>
+            )}
+            
+            {/* Session Info Section */}
+            <div className="border-t border-[#30363d] mt-auto">
               {/* Working Directory */}
               <div className="px-3 py-2 border-b border-[#21262d] group relative">
                 <div className="flex items-center justify-between mb-1">
-                  <div className="text-[10px] text-[#6e7681] uppercase tracking-wide">Working Directory</div>
+                  <div className="text-[10px] text-[#6e7681] uppercase tracking-wide">Directory</div>
                   <button
                     onClick={handleChangeDirectory}
                     className="text-[10px] text-[#58a6ff] hover:text-[#79c0ff] transition-colors"
-                    title="Open new session in different directory"
                   >
                     Change
                   </button>
                 </div>
-                <div 
-                  className="text-xs text-[#8b949e] font-mono truncate hover:text-[#e6edf3] transition-colors cursor-help"
-                >
-                  {activeTab?.cwd || 'Unknown'}
-                </div>
-                {/* Full path tooltip on hover */}
-                <div className="hidden group-hover:block absolute left-2 right-2 mt-1 px-2 py-1.5 bg-[#161b22] border border-[#30363d] rounded text-xs text-[#e6edf3] font-mono break-all z-50 shadow-lg max-w-[200px]">
-                  {activeTab?.cwd || 'Unknown'}
-                </div>
+                <div className="text-xs text-[#8b949e] font-mono truncate">{activeTab?.cwd || 'Unknown'}</div>
               </div>
               
-              {/* Edited Files Section */}
-              <div className="flex-1 overflow-y-auto">
-                <div className="flex items-center border-b border-[#21262d]">
+              {/* Edited Files */}
+              <div className="border-b border-[#21262d]">
+                <div className="flex items-center">
                   <button
                     onClick={() => setShowEditedFiles(!showEditedFiles)}
                     className="flex-1 flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors"
                   >
-                    <svg 
-                      width="10" height="10" 
-                      viewBox="0 0 24 24" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      strokeWidth="2"
-                      className={`transition-transform ${showEditedFiles ? 'rotate-90' : ''}`}
-                    >
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                      className={`transition-transform ${showEditedFiles ? 'rotate-90' : ''}`}>
                       <path d="M9 18l6-6-6-6"/>
                     </svg>
                     <span>Edited Files</span>
@@ -1517,8 +1451,8 @@ const App: React.FC = () => {
                   {(activeTab?.editedFiles.length || 0) > 0 && (
                     <button
                       onClick={handleOpenCommitModal}
-                      className="px-2 py-1 mr-1 text-[10px] text-[#58a6ff] hover:text-[#79c0ff] hover:bg-[#21262d] rounded transition-colors"
-                      title="Commit and push changes"
+                      className="px-2 py-1 mr-1 text-[#58a6ff] hover:text-[#79c0ff] hover:bg-[#21262d] rounded transition-colors"
+                      title="Commit and push"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <circle cx="12" cy="12" r="4"/>
@@ -1529,45 +1463,31 @@ const App: React.FC = () => {
                   )}
                 </div>
                 {showEditedFiles && activeTab && (
-                  <div className="border-b border-[#21262d]">
+                  <div className="max-h-32 overflow-y-auto">
                     {activeTab.editedFiles.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-[#6e7681]">
-                        No files edited yet
-                      </div>
+                      <div className="px-3 py-2 text-[10px] text-[#6e7681]">No files edited</div>
                     ) : (
-                      activeTab.editedFiles.map((filePath) => {
-                        const filename = filePath.split('/').pop() || filePath
-                        return (
-                          <div 
-                            key={filePath}
-                            className="flex items-center gap-2 px-3 py-1.5 text-xs text-[#8b949e] hover:bg-[#21262d]"
-                            title={filePath}
-                          >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3fb950" strokeWidth="2" className="shrink-0">
-                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                              <path d="M14 2v6h6"/>
-                            </svg>
-                            <span className="flex-1 truncate font-mono">{filename}</span>
-                          </div>
-                        )
-                      })
+                      activeTab.editedFiles.map((filePath) => (
+                        <div key={filePath} className="flex items-center gap-2 px-3 py-1 text-[10px] text-[#8b949e] hover:bg-[#21262d]" title={filePath}>
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#3fb950" strokeWidth="2" className="shrink-0">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                          </svg>
+                          <span className="truncate font-mono">{filePath.split('/').pop()}</span>
+                        </div>
+                      ))
                     )}
                   </div>
                 )}
-                
-                {/* Always Allowed Section */}
+              </div>
+              
+              {/* Always Allowed */}
+              <div>
                 <button
-                  onClick={() => setShowAlwaysAllowed(!showAlwaysAllowed)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors border-b border-[#21262d]"
+                  onClick={() => { setShowAlwaysAllowed(!showAlwaysAllowed); if (!showAlwaysAllowed) refreshAlwaysAllowed() }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors"
                 >
-                  <svg 
-                    width="10" height="10" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2"
-                    className={`transition-transform ${showAlwaysAllowed ? 'rotate-90' : ''}`}
-                  >
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                    className={`transition-transform ${showAlwaysAllowed ? 'rotate-90' : ''}`}>
                     <path d="M9 18l6-6-6-6"/>
                   </svg>
                   <span>Always Allowed</span>
@@ -1576,24 +1496,18 @@ const App: React.FC = () => {
                   )}
                 </button>
                 {showAlwaysAllowed && activeTab && (
-                  <div className="border-b border-[#21262d]">
+                  <div className="max-h-32 overflow-y-auto">
                     {activeTab.alwaysAllowed.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-[#6e7681]">
-                        No always-allowed commands
-                      </div>
+                      <div className="px-3 py-2 text-[10px] text-[#6e7681]">No always-allowed</div>
                     ) : (
-                      activeTab.alwaysAllowed.map((executable) => (
-                        <div 
-                          key={executable}
-                          className="group flex items-center gap-2 px-3 py-1.5 text-xs text-[#8b949e] hover:bg-[#21262d]"
-                        >
-                          <span className="flex-1 truncate font-mono" title={executable}>{executable}</span>
+                      activeTab.alwaysAllowed.map((exe) => (
+                        <div key={exe} className="group flex items-center gap-2 px-3 py-1 text-[10px] text-[#8b949e] hover:bg-[#21262d]">
+                          <span className="flex-1 truncate font-mono">{exe}</span>
                           <button
-                            onClick={() => handleRemoveAlwaysAllowed(executable)}
-                            className="shrink-0 p-0.5 rounded hover:bg-[#30363d] opacity-0 group-hover:opacity-100 transition-opacity text-[#f85149]"
-                            title="Remove"
+                            onClick={() => handleRemoveAlwaysAllowed(exe)}
+                            className="shrink-0 opacity-0 group-hover:opacity-100 text-[#f85149] transition-opacity"
                           >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <path d="M18 6L6 18M6 6l12 12"/>
                             </svg>
                           </button>
@@ -1602,25 +1516,9 @@ const App: React.FC = () => {
                     )}
                   </div>
                 )}
-                
-                {/* Placeholder for future MCP Servers section */}
-                {/* <button className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors border-b border-[#21262d]">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M9 18l6-6-6-6"/>
-                  </svg>
-                  <span>MCP Servers</span>
-                </button> */}
-                
-                {/* Placeholder for future Skills section */}
-                {/* <button className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors border-b border-[#21262d]">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M9 18l6-6-6-6"/>
-                  </svg>
-                  <span>Skills</span>
-                </button> */}
               </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
