@@ -85,6 +85,12 @@ const electronAPI = {
     respondPermission: (data: { requestId: string; decision: 'approved' | 'always' | 'denied' }): Promise<{ success: boolean }> => {
       return ipcRenderer.invoke('copilot:permissionResponse', data)
     },
+    getAlwaysAllowed: (sessionId: string): Promise<string[]> => {
+      return ipcRenderer.invoke('copilot:getAlwaysAllowed', sessionId)
+    },
+    removeAlwaysAllowed: (sessionId: string, executable: string): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('copilot:removeAlwaysAllowed', { sessionId, executable })
+    },
     onError: (callback: (data: { sessionId: string; message: string }) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; message: string }): void => callback(data)
       ipcRenderer.on('copilot:error', handler)

@@ -35,6 +35,7 @@ let copilotClient: CopilotClient | null = null
 interface SessionState {
   session: CopilotSession
   model: string
+  alwaysAllowed: Set<string>  // Per-session always-allowed executables
 }
 const sessions = new Map<string, SessionState>()
 let activeSessionId: string | null = null
@@ -47,9 +48,6 @@ const pendingPermissions = new Map<string, {
   executable: string
   sessionId: string
 }>()
-
-// Track "always allow" permissions by executable (e.g., "ls", "find", "curl")
-const alwaysAllowedExecutables = new Set<string>()
 
 // Model info with multipliers
 interface ModelInfo {
@@ -117,8 +115,9 @@ async function handlePermissionRequest(
   
   console.log(`[${ourSessionId}] Permission request:`, request.kind, executable)
   
-  // Check if this executable is always allowed
-  if (alwaysAllowedExecutables.has(executable)) {
+  // Check if this executable is always allowed for this session
+  const sessionState = sessions.get(ourSessionId)
+  if (sessionState?.alwaysAllowed.has(executable)) {
     console.log(`[${ourSessionId}] Auto-approved (always allow):`, executable)
     return { kind: 'approved' }
   }
@@ -181,7 +180,7 @@ async function createNewSession(model?: string): Promise<string> {
     }
   })
   
-  sessions.set(sessionId, { session: newSession, model: sessionModel })
+  sessions.set(sessionId, { session: newSession, model: sessionModel, alwaysAllowed: new Set() })
   activeSessionId = sessionId
   
   console.log(`Created session ${sessionId} with model ${sessionModel}`)
@@ -253,7 +252,7 @@ async function initCopilot(): Promise<void> {
           }
         })
         
-        sessions.set(sessionId, { session, model: sessionModel })
+        sessions.set(sessionId, { session, model: sessionModel, alwaysAllowed: new Set() })
         resumedSessions.push({ 
           sessionId, 
           model: sessionModel,
@@ -437,10 +436,13 @@ ipcMain.handle('copilot:permissionResponse', async (_event, data: {
   
   pendingPermissions.delete(data.requestId)
   
-  // Track "always allow" for this specific executable
+  // Track "always allow" for this specific executable in the session
   if (data.decision === 'always') {
-    alwaysAllowedExecutables.add(pending.executable)
-    console.log('Added to always allow:', pending.executable)
+    const sessionState = sessions.get(pending.sessionId)
+    if (sessionState) {
+      sessionState.alwaysAllowed.add(pending.executable)
+      console.log(`[${pending.sessionId}] Added to always allow:`, pending.executable)
+    }
   }
   
   const result: PermissionRequestResult = {
@@ -515,6 +517,25 @@ ipcMain.handle('copilot:switchSession', async (_event, sessionId: string) => {
   return { sessionId, model: sessionState.model }
 })
 
+// Get always-allowed executables for a session
+ipcMain.handle('copilot:getAlwaysAllowed', async (_event, sessionId: string) => {
+  const sessionState = sessions.get(sessionId)
+  if (!sessionState) {
+    return []
+  }
+  return Array.from(sessionState.alwaysAllowed)
+})
+
+// Remove an executable from always-allowed for a session
+ipcMain.handle('copilot:removeAlwaysAllowed', async (_event, data: { sessionId: string; executable: string }) => {
+  const sessionState = sessions.get(data.sessionId)
+  if (sessionState) {
+    sessionState.alwaysAllowed.delete(data.executable)
+    console.log(`[${data.sessionId}] Removed from always allow:`, data.executable)
+  }
+  return { success: true }
+})
+
 // Save open session IDs to persist across restarts
 ipcMain.handle('copilot:saveOpenSessions', async (_event, sessionIds: string[]) => {
   store.set('openSessionIds', sessionIds)
@@ -566,7 +587,7 @@ ipcMain.handle('copilot:resumePreviousSession', async (_event, sessionId: string
     }
   })
   
-  sessions.set(sessionId, { session, model: sessionModel })
+  sessions.set(sessionId, { session, model: sessionModel, alwaysAllowed: new Set() })
   activeSessionId = sessionId
   
   console.log(`Resumed previous session ${sessionId}`)

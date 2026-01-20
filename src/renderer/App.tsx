@@ -47,6 +47,7 @@ interface TabState {
   hasUnreadCompletion: boolean
   pendingConfirmation: PendingConfirmation | null
   needsTitle: boolean  // True if we should generate AI title on next idle
+  alwaysAllowed: string[]  // Executables that are always allowed for this session
 }
 
 let messageIdCounter = 0
@@ -71,6 +72,8 @@ const App: React.FC = () => {
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [previousSessions, setPreviousSessions] = useState<PreviousSession[]>([])
   const [showPreviousSessions, setShowPreviousSessions] = useState(false)
+  const [showRightPanel, setShowRightPanel] = useState(false)
+  const [showAlwaysAllowed, setShowAlwaysAllowed] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -133,7 +136,8 @@ const App: React.FC = () => {
         activeTools: [],
         hasUnreadCompletion: false,
         pendingConfirmation: null,
-        needsTitle: !s.name  // Only need title if no name provided
+        needsTitle: !s.name,  // Only need title if no name provided
+        alwaysAllowed: []
       }))
       
       // Update tab counter to avoid duplicate names
@@ -392,10 +396,41 @@ const App: React.FC = () => {
         requestId: pendingConfirmation.requestId,
         decision
       })
+      
+      // If "always" was selected, update the local alwaysAllowed list
+      if (decision === 'always' && pendingConfirmation.executable) {
+        updateTab(activeTab.id, { 
+          pendingConfirmation: null,
+          alwaysAllowed: [...activeTab.alwaysAllowed, pendingConfirmation.executable]
+        })
+        return
+      }
     } catch (error) {
       console.error('Permission response failed:', error)
     }
     updateTab(activeTab.id, { pendingConfirmation: null })
+  }
+
+  const handleRemoveAlwaysAllowed = async (executable: string) => {
+    if (!activeTab) return
+    try {
+      await window.electronAPI.copilot.removeAlwaysAllowed(activeTab.id, executable)
+      updateTab(activeTab.id, {
+        alwaysAllowed: activeTab.alwaysAllowed.filter(e => e !== executable)
+      })
+    } catch (error) {
+      console.error('Failed to remove always-allowed:', error)
+    }
+  }
+
+  const refreshAlwaysAllowed = async () => {
+    if (!activeTab) return
+    try {
+      const list = await window.electronAPI.copilot.getAlwaysAllowed(activeTab.id)
+      updateTab(activeTab.id, { alwaysAllowed: list })
+    } catch (error) {
+      console.error('Failed to fetch always-allowed:', error)
+    }
   }
 
   const handleNewTab = async () => {
@@ -411,7 +446,8 @@ const App: React.FC = () => {
         activeTools: [],
         hasUnreadCompletion: false,
         pendingConfirmation: null,
-        needsTitle: true
+        needsTitle: true,
+        alwaysAllowed: []
       }
       setTabs(prev => [...prev, newTab])
       setActiveTabId(result.sessionId)
@@ -440,7 +476,8 @@ const App: React.FC = () => {
           activeTools: [],
           hasUnreadCompletion: false,
           pendingConfirmation: null,
-          needsTitle: true
+          needsTitle: true,
+          alwaysAllowed: []
         }
         setTabs([newTab])
         setActiveTabId(result.sessionId)
@@ -495,7 +532,8 @@ const App: React.FC = () => {
         activeTools: [],
         hasUnreadCompletion: false,
         pendingConfirmation: null,
-        needsTitle: !prevSession.name
+        needsTitle: !prevSession.name,
+        alwaysAllowed: []
       }
       
       setTabs(prev => [...prev, newTab])
@@ -549,7 +587,8 @@ const App: React.FC = () => {
           activeTools: [],
           hasUnreadCompletion: false,
           pendingConfirmation: null,
-          needsTitle: true
+          needsTitle: true,
+          alwaysAllowed: []
         }
         setTabs(prev => [...prev, newTab])
         setActiveTabId(modelResult.sessionId)
@@ -571,7 +610,8 @@ const App: React.FC = () => {
           activeTools: [],
           hasUnreadCompletion: false,
           pendingConfirmation: null,
-          needsTitle: true
+          needsTitle: true,
+          alwaysAllowed: []
         }]
       })
       setActiveTabId(result.sessionId)
@@ -951,6 +991,105 @@ const App: React.FC = () => {
           </button>
         </div>
       </div>
+        </div>
+        
+        {/* Right Panel - Session Info */}
+        <div className="flex flex-col border-l border-[#30363d]">
+          {/* Toggle Button */}
+          <button
+            onClick={() => {
+              setShowRightPanel(!showRightPanel)
+              if (!showRightPanel) refreshAlwaysAllowed()
+            }}
+            className="flex items-center justify-center w-10 h-10 text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors"
+            title={showRightPanel ? "Hide session info" : "Show session info"}
+          >
+            <svg 
+              width="16" height="16" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2"
+              className={`transition-transform ${showRightPanel ? 'rotate-180' : ''}`}
+            >
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+          
+          {/* Collapsible Panel Content */}
+          {showRightPanel && (
+            <div className="w-56 flex flex-col overflow-hidden">
+              <div className="px-3 py-2 border-b border-[#30363d]">
+                <h3 className="text-xs font-medium text-[#e6edf3]">Session Info</h3>
+              </div>
+              
+              {/* Always Allowed Section */}
+              <div className="flex-1 overflow-y-auto">
+                <button
+                  onClick={() => setShowAlwaysAllowed(!showAlwaysAllowed)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors border-b border-[#21262d]"
+                >
+                  <svg 
+                    width="10" height="10" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2"
+                    className={`transition-transform ${showAlwaysAllowed ? 'rotate-90' : ''}`}
+                  >
+                    <path d="M9 18l6-6-6-6"/>
+                  </svg>
+                  <span>Always Allowed</span>
+                  {(activeTab?.alwaysAllowed.length || 0) > 0 && (
+                    <span className="ml-auto text-[#58a6ff]">({activeTab?.alwaysAllowed.length})</span>
+                  )}
+                </button>
+                {showAlwaysAllowed && activeTab && (
+                  <div className="border-b border-[#21262d]">
+                    {activeTab.alwaysAllowed.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-[#6e7681]">
+                        No always-allowed commands
+                      </div>
+                    ) : (
+                      activeTab.alwaysAllowed.map((executable) => (
+                        <div 
+                          key={executable}
+                          className="group flex items-center gap-2 px-3 py-1.5 text-xs text-[#8b949e] hover:bg-[#21262d]"
+                        >
+                          <span className="flex-1 truncate font-mono" title={executable}>{executable}</span>
+                          <button
+                            onClick={() => handleRemoveAlwaysAllowed(executable)}
+                            className="shrink-0 p-0.5 rounded hover:bg-[#30363d] opacity-0 group-hover:opacity-100 transition-opacity text-[#f85149]"
+                            title="Remove"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M18 6L6 18M6 6l12 12"/>
+                            </svg>
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+                
+                {/* Placeholder for future MCP Servers section */}
+                {/* <button className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors border-b border-[#21262d]">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 18l6-6-6-6"/>
+                  </svg>
+                  <span>MCP Servers</span>
+                </button> */}
+                
+                {/* Placeholder for future Skills section */}
+                {/* <button className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8b949e] hover:text-[#e6edf3] hover:bg-[#21262d] transition-colors border-b border-[#21262d]">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 18l6-6-6-6"/>
+                  </svg>
+                  <span>Skills</span>
+                </button> */}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
