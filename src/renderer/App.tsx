@@ -1173,6 +1173,89 @@ const App: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Permission Confirmation - Above Input */}
+      {activeTab?.pendingConfirmations?.[0] && (() => {
+        const pendingConfirmation = activeTab.pendingConfirmations[0]
+        const queueLength = activeTab.pendingConfirmations.length
+        return (
+        <div className="shrink-0 mx-3 mb-2 p-4 bg-[#1c2128] rounded-lg border border-[#d29922]">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[#d29922] text-lg">⚠️</span>
+            <span className="text-[#e6edf3] text-sm font-medium">
+              {pendingConfirmation.isOutOfScope ? (
+                <>Allow reading outside workspace?</>
+              ) : pendingConfirmation.kind === 'write' ? (
+                <>Allow file changes?</>
+              ) : pendingConfirmation.kind === 'shell' ? (
+                <>Allow <strong>{pendingConfirmation.executable || 'command'}</strong>?</>
+              ) : (
+                <>Allow <strong>{pendingConfirmation.kind}</strong>?</>
+              )}
+            </span>
+            {queueLength > 1 && (
+              <span className="text-xs text-[#8b949e] ml-auto bg-[#30363d] px-2 py-0.5 rounded-full">
+                +{queueLength - 1} more
+              </span>
+            )}
+          </div>
+          {pendingConfirmation.isOutOfScope && (
+            <div className="text-xs text-[#8b949e] mb-2">
+              Path is outside trusted workspace
+            </div>
+          )}
+          {pendingConfirmation.path && (
+            <div className="text-xs text-[#58a6ff] mb-2 font-mono truncate" title={pendingConfirmation.path}>
+              📄 {pendingConfirmation.path}
+            </div>
+          )}
+          {pendingConfirmation.fullCommandText && (
+            <pre className="bg-[#0d1117] rounded p-3 my-2 overflow-x-auto text-xs text-[#e6edf3] border border-[#30363d] max-h-32">
+              <code>{pendingConfirmation.fullCommandText}</code>
+            </pre>
+          )}
+          <div className="flex gap-2 mt-3">
+            {pendingConfirmation.isOutOfScope ? (
+              <>
+                <button
+                  onClick={() => handleConfirmation('approved')}
+                  className="flex-1 px-3 py-2 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-medium transition-colors"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => handleConfirmation('denied')}
+                  className="flex-1 px-3 py-2 rounded bg-[#21262d] hover:bg-[#30363d] text-[#f85149] text-sm font-medium border border-[#30363d] transition-colors"
+                >
+                  No
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleConfirmation('approved')}
+                  className="px-4 py-2 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-medium transition-colors"
+                >
+                  Once
+                </button>
+                <button
+                  onClick={() => handleConfirmation('always')}
+                  className="px-4 py-2 rounded bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] text-sm font-medium border border-[#30363d] transition-colors"
+                >
+                  Always
+                </button>
+                <button
+                  onClick={() => handleConfirmation('denied')}
+                  className="px-4 py-2 rounded bg-[#21262d] hover:bg-[#30363d] text-[#f85149] text-sm font-medium border border-[#30363d] transition-colors"
+                >
+                  Deny
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        )
+      })()}
+
       {/* Input Area */}
       <div className="shrink-0 p-3 bg-[#161b22] border-t border-[#30363d]">
         <div className="flex items-center bg-[#0d1117] rounded-lg border border-[#30363d] focus-within:border-[#58a6ff] transition-colors">
@@ -1239,89 +1322,6 @@ const App: React.FC = () => {
           
           {/* Tool Activity Log */}
           <div className="flex-1 overflow-y-auto">
-            {/* Permission Confirmation - Top Priority (show first in queue) */}
-            {activeTab?.pendingConfirmations?.[0] && (() => {
-              const pendingConfirmation = activeTab.pendingConfirmations[0]
-              const queueLength = activeTab.pendingConfirmations.length
-              return (
-              <div className="p-3 bg-[#1c2128] border-b border-[#d29922]">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[#d29922]">⚠️</span>
-                  <span className="text-[#e6edf3] text-xs font-medium">
-                    {pendingConfirmation.isOutOfScope ? (
-                      <>Allow reading outside workspace?</>
-                    ) : pendingConfirmation.kind === 'write' ? (
-                      <>Allow file changes?</>
-                    ) : pendingConfirmation.kind === 'shell' ? (
-                      <>Allow <strong>{pendingConfirmation.executable || 'command'}</strong>?</>
-                    ) : (
-                      <>Allow <strong>{pendingConfirmation.kind}</strong>?</>
-                    )}
-                  </span>
-                  {queueLength > 1 && (
-                    <span className="text-[10px] text-[#8b949e] ml-auto">
-                      +{queueLength - 1} more
-                    </span>
-                  )}
-                </div>
-                {pendingConfirmation.isOutOfScope && (
-                  <div className="text-[10px] text-[#8b949e] mb-2">
-                    Path is outside trusted workspace
-                  </div>
-                )}
-                {pendingConfirmation.path && (
-                  <div className="text-[10px] text-[#58a6ff] mb-2 font-mono truncate" title={pendingConfirmation.path}>
-                    📄 {pendingConfirmation.path}
-                  </div>
-                )}
-                {pendingConfirmation.fullCommandText && (
-                  <pre className="bg-[#0d1117] rounded p-2 my-2 overflow-x-auto text-[10px] text-[#e6edf3] border border-[#30363d] max-h-24">
-                    <code>{pendingConfirmation.fullCommandText}</code>
-                  </pre>
-                )}
-                <div className="flex gap-2 mt-2">
-                  {pendingConfirmation.isOutOfScope ? (
-                    <>
-                      <button
-                        onClick={() => handleConfirmation('approved')}
-                        className="flex-1 px-2 py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-[10px] font-medium transition-colors"
-                      >
-                        Yes
-                      </button>
-                      <button
-                        onClick={() => handleConfirmation('denied')}
-                        className="flex-1 px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#f85149] text-[10px] font-medium border border-[#30363d] transition-colors"
-                      >
-                        No
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => handleConfirmation('approved')}
-                        className="px-2 py-1 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-[10px] font-medium transition-colors"
-                      >
-                        Once
-                      </button>
-                      <button
-                        onClick={() => handleConfirmation('always')}
-                        className="px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#e6edf3] text-[10px] font-medium border border-[#30363d] transition-colors"
-                      >
-                        Always
-                      </button>
-                      <button
-                        onClick={() => handleConfirmation('denied')}
-                        className="px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-[#f85149] text-[10px] font-medium border border-[#30363d] transition-colors"
-                      >
-                        Deny
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-              )
-            })()}
-            
             {/* Tools List */}
             {(activeTab?.activeTools?.length || 0) > 0 && (
               <div className="border-b border-[#21262d]">
