@@ -517,6 +517,12 @@ const App: React.FC = () => {
     }
   }, [inputValue, activeTab, updateTab])
 
+  const handleStop = useCallback(() => {
+    if (!activeTab) return
+    window.electronAPI.copilot.abort(activeTab.id)
+    updateTab(activeTab.id, { isProcessing: false })
+  }, [activeTab, updateTab])
+
   const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -1491,13 +1497,26 @@ const App: React.FC = () => {
               target.style.height = Math.min(target.scrollHeight, 200) + 'px'
             }}
           />
-          <button
-            onClick={handleSendMessage}
-            disabled={!inputValue.trim() || status !== 'connected' || activeTab?.isProcessing}
-            className="shrink-0 px-4 py-2.5 text-copilot-accent hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-medium transition-colors"
-          >
-            Send
-          </button>
+          {activeTab?.isProcessing ? (
+            <button
+              onClick={handleStop}
+              className="shrink-0 px-4 py-2.5 text-copilot-error hover:brightness-110 text-xs font-medium transition-colors flex items-center gap-1.5"
+              title="Stop"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+              </svg>
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={handleSendMessage}
+              disabled={!inputValue.trim() || status !== 'connected' || activeTab?.isProcessing}
+              className="shrink-0 px-4 py-2.5 text-copilot-accent hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-medium transition-colors"
+            >
+              Send
+            </button>
+          )}
         </div>
       </div>
         </div>
