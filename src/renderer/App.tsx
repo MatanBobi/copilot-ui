@@ -50,7 +50,7 @@ interface TabState {
   isProcessing: boolean
   activeTools: ActiveTool[]
   hasUnreadCompletion: boolean
-  pendingConfirmation: PendingConfirmation | null
+  pendingConfirmations: PendingConfirmation[]  // Queue of pending permission requests
   needsTitle: boolean  // True if we should generate AI title on next idle
   alwaysAllowed: string[]  // Executables that are always allowed for this session
   editedFiles: string[]  // Files edited/created in this session
@@ -243,7 +243,7 @@ const App: React.FC = () => {
             isProcessing: false,
             activeTools: [],
             hasUnreadCompletion: false,
-            pendingConfirmation: null,
+            pendingConfirmations: [],
             needsTitle: true,
             alwaysAllowed: [],
             editedFiles: [],
@@ -268,7 +268,7 @@ const App: React.FC = () => {
         isProcessing: false,
         activeTools: [],
         hasUnreadCompletion: false,
-        pendingConfirmation: null,
+        pendingConfirmations: [],
         needsTitle: !s.name,  // Only need title if no name provided
         alwaysAllowed: s.alwaysAllowed || [],
         editedFiles: s.editedFiles || [],
@@ -476,8 +476,11 @@ const App: React.FC = () => {
         isOutOfScope: data.isOutOfScope as boolean | undefined,
         content: data.content as string | undefined,
       }
+      // Add to pending confirmations queue (don't replace existing ones)
       setTabs(prev => prev.map(tab => 
-        tab.id === sessionId ? { ...tab, pendingConfirmation: confirmation } : tab
+        tab.id === sessionId 
+          ? { ...tab, pendingConfirmations: [...tab.pendingConfirmations, confirmation] } 
+          : tab
       ))
     })
 
@@ -551,7 +554,8 @@ const App: React.FC = () => {
   }
 
   const handleConfirmation = async (decision: 'approved' | 'always' | 'denied') => {
-    const pendingConfirmation = activeTab?.pendingConfirmation
+    // Get the first pending confirmation from the queue
+    const pendingConfirmation = activeTab?.pendingConfirmations?.[0]
     if (!pendingConfirmation || !activeTab) return
     
     try {
@@ -560,20 +564,25 @@ const App: React.FC = () => {
         decision
       })
       
+      // Remove this confirmation from the queue
+      const remainingConfirmations = activeTab.pendingConfirmations.slice(1)
+      
       // If "always" was selected, update the local alwaysAllowed list
       if (decision === 'always' && pendingConfirmation.executable) {
         // Split comma-separated executables into individual entries
         const newExecutables = pendingConfirmation.executable.split(', ').filter(e => e.trim())
         updateTab(activeTab.id, { 
-          pendingConfirmation: null,
+          pendingConfirmations: remainingConfirmations,
           alwaysAllowed: [...activeTab.alwaysAllowed, ...newExecutables]
         })
         return
       }
+      updateTab(activeTab.id, { pendingConfirmations: remainingConfirmations })
     } catch (error) {
       console.error('Permission response failed:', error)
+      // Still remove from queue on error to avoid being stuck
+      updateTab(activeTab.id, { pendingConfirmations: activeTab.pendingConfirmations.slice(1) })
     }
-    updateTab(activeTab.id, { pendingConfirmation: null })
   }
 
   const handleRemoveAlwaysAllowed = async (executable: string) => {
@@ -685,7 +694,7 @@ const App: React.FC = () => {
         isProcessing: false,
         activeTools: [],
         hasUnreadCompletion: false,
-        pendingConfirmation: null,
+        pendingConfirmations: [],
         needsTitle: true,
         alwaysAllowed: [],
         editedFiles: [],
@@ -718,7 +727,7 @@ const App: React.FC = () => {
           isProcessing: false,
           activeTools: [],
           hasUnreadCompletion: false,
-          pendingConfirmation: null,
+          pendingConfirmations: [],
           needsTitle: true,
           alwaysAllowed: [],
           editedFiles: [],
@@ -777,7 +786,7 @@ const App: React.FC = () => {
         isProcessing: false,
         activeTools: [],
         hasUnreadCompletion: false,
-        pendingConfirmation: null,
+        pendingConfirmations: [],
         needsTitle: !prevSession.name,
         alwaysAllowed: result.alwaysAllowed || [],
         editedFiles: result.editedFiles || [],
@@ -835,7 +844,7 @@ const App: React.FC = () => {
           isProcessing: false,
           activeTools: [],
           hasUnreadCompletion: false,
-          pendingConfirmation: null,
+          pendingConfirmations: [],
           needsTitle: true,
           alwaysAllowed: [],
           editedFiles: [],
@@ -861,7 +870,7 @@ const App: React.FC = () => {
           isProcessing: false,
           activeTools: [],
           hasUnreadCompletion: false,
-          pendingConfirmation: null,
+          pendingConfirmations: [],
           needsTitle: true,
           alwaysAllowed: [],
           editedFiles: [],
@@ -999,7 +1008,7 @@ const App: React.FC = () => {
                 }`}
               >
                 {/* Status indicator */}
-                {tab.pendingConfirmation ? (
+                {tab.pendingConfirmations.length > 0 ? (
                   <span className="shrink-0 w-2 h-2 rounded-full bg-[#58a6ff] animate-pulse" />
                 ) : tab.isProcessing ? (
                   <span className="shrink-0 w-2 h-2 rounded-full bg-[#d29922] animate-pulse" />
@@ -1230,40 +1239,48 @@ const App: React.FC = () => {
           
           {/* Tool Activity Log */}
           <div className="flex-1 overflow-y-auto">
-            {/* Permission Confirmation - Top Priority */}
-            {activeTab?.pendingConfirmation && (
+            {/* Permission Confirmation - Top Priority (show first in queue) */}
+            {activeTab?.pendingConfirmations?.[0] && (() => {
+              const pendingConfirmation = activeTab.pendingConfirmations[0]
+              const queueLength = activeTab.pendingConfirmations.length
+              return (
               <div className="p-3 bg-[#1c2128] border-b border-[#d29922]">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-[#d29922]">⚠️</span>
                   <span className="text-[#e6edf3] text-xs font-medium">
-                    {activeTab.pendingConfirmation.isOutOfScope ? (
+                    {pendingConfirmation.isOutOfScope ? (
                       <>Allow reading outside workspace?</>
-                    ) : activeTab.pendingConfirmation.kind === 'write' ? (
+                    ) : pendingConfirmation.kind === 'write' ? (
                       <>Allow file changes?</>
-                    ) : activeTab.pendingConfirmation.kind === 'shell' ? (
-                      <>Allow <strong>{activeTab.pendingConfirmation.executable || 'command'}</strong>?</>
+                    ) : pendingConfirmation.kind === 'shell' ? (
+                      <>Allow <strong>{pendingConfirmation.executable || 'command'}</strong>?</>
                     ) : (
-                      <>Allow <strong>{activeTab.pendingConfirmation.kind}</strong>?</>
+                      <>Allow <strong>{pendingConfirmation.kind}</strong>?</>
                     )}
                   </span>
+                  {queueLength > 1 && (
+                    <span className="text-[10px] text-[#8b949e] ml-auto">
+                      +{queueLength - 1} more
+                    </span>
+                  )}
                 </div>
-                {activeTab.pendingConfirmation.isOutOfScope && (
+                {pendingConfirmation.isOutOfScope && (
                   <div className="text-[10px] text-[#8b949e] mb-2">
                     Path is outside trusted workspace
                   </div>
                 )}
-                {activeTab.pendingConfirmation.path && (
-                  <div className="text-[10px] text-[#58a6ff] mb-2 font-mono truncate" title={activeTab.pendingConfirmation.path}>
-                    📄 {activeTab.pendingConfirmation.path}
+                {pendingConfirmation.path && (
+                  <div className="text-[10px] text-[#58a6ff] mb-2 font-mono truncate" title={pendingConfirmation.path}>
+                    📄 {pendingConfirmation.path}
                   </div>
                 )}
-                {activeTab.pendingConfirmation.fullCommandText && (
+                {pendingConfirmation.fullCommandText && (
                   <pre className="bg-[#0d1117] rounded p-2 my-2 overflow-x-auto text-[10px] text-[#e6edf3] border border-[#30363d] max-h-24">
-                    <code>{activeTab.pendingConfirmation.fullCommandText}</code>
+                    <code>{pendingConfirmation.fullCommandText}</code>
                   </pre>
                 )}
                 <div className="flex gap-2 mt-2">
-                  {activeTab.pendingConfirmation.isOutOfScope ? (
+                  {pendingConfirmation.isOutOfScope ? (
                     <>
                       <button
                         onClick={() => handleConfirmation('approved')}
@@ -1302,7 +1319,8 @@ const App: React.FC = () => {
                   )}
                 </div>
               </div>
-            )}
+              )
+            })()}
             
             {/* Tools List */}
             {(activeTab?.activeTools?.length || 0) > 0 && (
