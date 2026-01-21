@@ -135,7 +135,6 @@ const electronAPI = {
       return ipcRenderer.invoke('git:generateCommitMessage', { diff })
     }
   },
-
   // Theme management
   theme: {
     get: (): Promise<string> => {
@@ -160,9 +159,50 @@ const electronAPI = {
       const handler = (_event: Electron.IpcRendererEvent, data: { systemTheme: 'light' | 'dark' }): void => callback(data)
       ipcRenderer.on('theme:systemChanged', handler)
       return () => ipcRenderer.removeListener('theme:systemChanged', handler)
+    },
+  },
+  // MCP Server Management
+  mcp: {
+    getConfig: (): Promise<{ mcpServers: Record<string, MCPServerConfig> }> => {
+      return ipcRenderer.invoke('mcp:getConfig')
+    },
+    saveConfig: (config: { mcpServers: Record<string, MCPServerConfig> }): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('mcp:saveConfig', config)
+    },
+    addServer: (name: string, server: MCPServerConfig): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('mcp:addServer', { name, server })
+    },
+    updateServer: (name: string, server: MCPServerConfig): Promise<{ success: boolean; error?: string }> => {
+      return ipcRenderer.invoke('mcp:updateServer', { name, server })
+    },
+    deleteServer: (name: string): Promise<{ success: boolean; error?: string }> => {
+      return ipcRenderer.invoke('mcp:deleteServer', name)
     }
   }
 }
+
+// MCP Server Configuration types
+interface MCPServerConfigBase {
+  tools: string[]
+  type?: string
+  timeout?: number
+}
+
+interface MCPLocalServerConfig extends MCPServerConfigBase {
+  type?: 'local' | 'stdio'
+  command: string
+  args: string[]
+  env?: Record<string, string>
+  cwd?: string
+}
+
+interface MCPRemoteServerConfig extends MCPServerConfigBase {
+  type: 'http' | 'sse'
+  url: string
+  headers?: Record<string, string>
+}
+
+type MCPServerConfig = MCPLocalServerConfig | MCPRemoteServerConfig
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI)
 
