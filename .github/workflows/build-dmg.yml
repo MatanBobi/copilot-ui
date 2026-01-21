@@ -42,6 +42,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Ensure we're on a branch (checkout is often detached on Actions)
+          git checkout -B main
+
+          # Sync with latest main BEFORE staging any files.
+          git fetch origin main
+          git rebase origin/main
+
           # Stage only the DMG (release/ is otherwise ignored)
           git add -f release/*.dmg || true
 
@@ -49,9 +56,6 @@ jobs:
             echo "No DMG changes to commit."
             exit 0
           fi
-
-          git fetch origin main
-          git rebase origin/main
 
           git commit -m "chore: update dmg [skip dmg]"
           git push origin HEAD:main
