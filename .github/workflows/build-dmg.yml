@@ -32,11 +32,17 @@ jobs:
       - name: Build DMG
         run: npm run dist
 
+      - name: Normalize DMG filename
+        run: |
+          set -euo pipefail
+          dmg="$(ls -1 release/*.dmg | head -n 1)"
+          mv -f "$dmg" "release/Copilot-Skins-arm64.dmg"
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: Copilot-Skins-dmg
-          path: release/*.dmg
+          path: release/Copilot-Skins-arm64.dmg
           if-no-files-found: error
 
       - name: Publish "nightly" release asset
@@ -47,6 +53,6 @@ jobs:
           prerelease: true
           allowUpdates: true
           replacesArtifacts: true
-          artifacts: release/*.dmg
+          artifacts: release/Copilot-Skins-arm64.dmg
           body: |
             Automated build from `${{ github.sha }}`.
