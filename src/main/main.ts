@@ -1105,8 +1105,22 @@ ipcMain.handle('git:commitAndPush', async (_event, data: { cwd: string; files: s
     // Commit with the message
     await execAsync(`git commit -m "${data.message.replace(/"/g, '\\"')}"`, { cwd: data.cwd })
     
-    // Push
-    await execAsync('git push', { cwd: data.cwd })
+    // Push - handle upstream branch setting
+    try {
+      await execAsync('git push', { cwd: data.cwd })
+    } catch (pushError) {
+      // If push fails due to no upstream branch, set upstream and push
+      const errorMsg = String(pushError)
+      if (errorMsg.includes('has no upstream branch')) {
+        // Get current branch name
+        const { stdout: branch } = await execAsync('git branch --show-current', { cwd: data.cwd })
+        const branchName = branch.trim()
+        // Set upstream and push
+        await execAsync(`git push --set-upstream origin ${branchName}`, { cwd: data.cwd })
+      } else {
+        throw pushError
+      }
+    }
     
     return { success: true }
   } catch (error) {
