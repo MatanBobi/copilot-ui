@@ -1,0 +1,57 @@
+name: Build DMG
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dmg-main
+  cancel-in-progress: true
+
+jobs:
+  build-dmg:
+    # Prevent infinite loop when the workflow commits the DMG.
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip dmg]')
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Remove previous DMGs
+        run: rm -f release/*.dmg || true
+
+      - name: Build DMG
+        run: npm run dist
+
+      - name: Commit DMG (if changed)
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Stage only the DMG (release/ is otherwise ignored)
+          git add -f release/*.dmg || true
+
+          if git diff --cached --quiet; then
+            echo "No DMG changes to commit."
+            exit 0
+          fi
+
+          git fetch origin main
+          git rebase origin/main
+
+          git commit -m "chore: update dmg [skip dmg]"
+          git push origin HEAD:main

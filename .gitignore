@@ -27,4 +27,6 @@ npm-debug.log*
 *.asar
 
 # Release builds
-release/
+# Keep build outputs untracked, but allow committing the generated DMG.
+release/**
+!release/*.dmg
