@@ -25,6 +25,13 @@ process.on('uncaughtException', (err) => {
 // Replace console with electron-log
 Object.assign(console, log.functions)
 
+// Bounce dock icon to get user attention (macOS only)
+function bounceDock(): void {
+  if (process.platform === 'darwin' && !mainWindow?.isFocused()) {
+    app.dock?.bounce('informational')
+  }
+}
+
 interface StoredSession {
   sessionId: string
   model: string
@@ -286,6 +293,7 @@ async function handlePermissionRequest(
         isOutOfScope: false,
         ...request
       })
+      bounceDock()
     })
   }
   
@@ -338,6 +346,7 @@ async function handlePermissionRequest(
       isOutOfScope,
       ...request
     })
+    bounceDock()
   })
 }
 
@@ -370,6 +379,7 @@ async function createNewSession(model?: string, cwd?: string): Promise<string> {
       mainWindow.webContents.send('copilot:message', { sessionId, content: event.data.content })
     } else if (event.type === 'session.idle') {
       mainWindow.webContents.send('copilot:idle', { sessionId })
+      bounceDock()
     } else if (event.type === 'tool.execution_start') {
       console.log(`[${sessionId}] Tool start FULL:`, JSON.stringify(event.data, null, 2))
       mainWindow.webContents.send('copilot:tool-start', { 
@@ -460,6 +470,7 @@ async function initCopilot(): Promise<void> {
             mainWindow.webContents.send('copilot:message', { sessionId, content: event.data.content })
           } else if (event.type === 'session.idle') {
             mainWindow.webContents.send('copilot:idle', { sessionId })
+            bounceDock()
           } else if (event.type === 'tool.execution_start') {
             console.log(`[${sessionId}] Tool start FULL:`, JSON.stringify(event.data, null, 2))
             mainWindow.webContents.send('copilot:tool-start', { 
@@ -938,6 +949,7 @@ ipcMain.handle('copilot:resumePreviousSession', async (_event, sessionId: string
       mainWindow.webContents.send('copilot:message', { sessionId, content: event.data.content })
     } else if (event.type === 'session.idle') {
       mainWindow.webContents.send('copilot:idle', { sessionId })
+      bounceDock()
     } else if (event.type === 'tool.execution_start') {
       console.log(`[${sessionId}] Tool start FULL:`, JSON.stringify(event.data, null, 2))
       mainWindow.webContents.send('copilot:tool-start', { 
