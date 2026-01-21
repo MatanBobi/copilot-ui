@@ -913,53 +913,64 @@ const App: React.FC = () => {
           <div className="flex items-center gap-2 ml-2">
             <img src={logo} alt="Copilot Skins" className="w-4 h-4 rounded-sm" />
             <span className="text-copilot-text text-sm font-medium">Copilot Skins</span>
-            
-            {/* Model Selector */}
-            <div className="relative no-drag">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowModelDropdown(!showModelDropdown)
-                }}
-                className="flex items-center gap-1 px-2 py-0.5 rounded bg-copilot-surface hover:bg-copilot-surface-hover transition-colors text-xs text-copilot-text-muted hover:text-copilot-text"
-              >
-                <span>{availableModels.find(m => m.id === activeTab?.model)?.name || activeTab?.model || 'Loading...'}</span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M6 9l6 6 6-6"/>
-                </svg>
-              </button>
-              
-              {showModelDropdown && availableModels.length > 0 && (
-                <div 
-                  className="absolute top-full left-0 mt-1 py-1 bg-copilot-surface border border-copilot-border rounded-lg shadow-lg z-50 min-w-[240px]"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {availableModels.map((model) => (
-                    <button
-                      key={model.id}
-                      onClick={() => handleModelChange(model.id)}
-                      className={`w-full px-3 py-1.5 text-left text-xs hover:bg-copilot-surface-hover transition-colors flex justify-between items-center ${
-                        model.id === activeTab?.model ? 'text-copilot-accent' : 'text-copilot-text'
-                      }`}
-                    >
-                      <span>{model.id === activeTab?.model && '✓ '}{model.name}</span>
-                      <span className={`ml-2 ${
-                        model.multiplier === 0 ? 'text-copilot-success' : 
-                        model.multiplier < 1 ? 'text-copilot-success' :
-                        model.multiplier > 1 ? 'text-copilot-warning' : 'text-copilot-text-muted'
-                      }`}>
-                        {model.multiplier === 0 ? 'free' : `${model.multiplier}×`}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+
 
           </div>
         </div>
 
         <div className="flex items-center gap-2 no-drag">
+          {/* Model Selector */}
+          <div className="relative no-drag">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowModelDropdown(!showModelDropdown)
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-copilot-surface hover:bg-copilot-surface-hover transition-colors text-xs text-copilot-text-muted hover:text-copilot-text"
+              title="Model"
+            >
+              <span>{availableModels.find(m => m.id === activeTab?.model)?.name || activeTab?.model || 'Loading...'}</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+
+            {showModelDropdown && availableModels.length > 0 && (
+              <div
+                className="absolute top-full right-0 mt-1 py-1 bg-copilot-surface border border-copilot-border rounded-lg shadow-lg z-50 min-w-[240px]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {availableModels.map((model) => (
+                  <button
+                    key={model.id}
+                    onClick={() => handleModelChange(model.id)}
+                    className={`w-full px-3 py-1.5 text-left text-xs hover:bg-copilot-surface-hover transition-colors flex justify-between items-center ${
+                      model.id === activeTab?.model ? 'text-copilot-accent' : 'text-copilot-text'
+                    }`}
+                  >
+                    <span>
+                      {model.id === activeTab?.model && '✓ '}
+                      {model.name}
+                    </span>
+                    <span
+                      className={`ml-2 ${
+                        model.multiplier === 0
+                          ? 'text-copilot-success'
+                          : model.multiplier < 1
+                            ? 'text-copilot-success'
+                            : model.multiplier > 1
+                              ? 'text-copilot-warning'
+                              : 'text-copilot-text-muted'
+                      }`}
+                    >
+                      {model.multiplier === 0 ? 'free' : `${model.multiplier}×`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Theme Selector */}
           <div className="relative no-drag">
             <button
