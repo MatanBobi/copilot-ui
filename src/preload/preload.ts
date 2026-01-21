@@ -38,8 +38,11 @@ const electronAPI = {
     switchSession: (sessionId: string): Promise<{ sessionId: string; model: string }> => {
       return ipcRenderer.invoke('copilot:switchSession', sessionId)
     },
-    saveOpenSessions: (sessions: { sessionId: string; model: string; cwd: string; editedFiles?: string[]; alwaysAllowed?: string[] }[]): Promise<{ success: boolean }> => {
+    saveOpenSessions: (sessions: { sessionId: string; model: string; cwd: string; editedFiles?: string[]; alwaysAllowed?: string[]; name?: string }[]): Promise<{ success: boolean }> => {
       return ipcRenderer.invoke('copilot:saveOpenSessions', sessions)
+    },
+    renameSession: (sessionId: string, name: string): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('copilot:renameSession', { sessionId, name })
     },
     resumePreviousSession: (sessionId: string): Promise<{ sessionId: string; model: string; cwd: string; alreadyOpen: boolean; editedFiles?: string[]; alwaysAllowed?: string[] }> => {
       return ipcRenderer.invoke('copilot:resumePreviousSession', sessionId)

@@ -56,6 +56,8 @@ interface TabState {
   alwaysAllowed: string[]  // Executables that are always allowed for this session
   editedFiles: string[]  // Files edited/created in this session
   currentIntent: string | null  // Current agent intent from report_intent tool
+  isRenaming?: boolean
+  renameDraft?: string
 }
 
 let messageIdCounter = 0
@@ -213,6 +215,7 @@ const App: React.FC = () => {
         sessionId: t.id, 
         model: t.model, 
         cwd: t.cwd,
+        name: t.name,
         editedFiles: t.editedFiles,
         alwaysAllowed: t.alwaysAllowed
       }))
@@ -1149,7 +1152,60 @@ const App: React.FC = () => {
                 ) : (
                   <span className="shrink-0 w-2 h-2 rounded-full bg-transparent" />
                 )}
-                <span className="flex-1 truncate">{tab.name}</span>
+                {tab.isRenaming ? (
+                  <input
+                    autoFocus
+                    value={tab.renameDraft ?? tab.name}
+                    onChange={(e) => setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, renameDraft: e.target.value } : t))}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === 'Escape') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                      }
+                    }}
+                    onKeyUp={async (e) => {
+                      if (e.key === 'Escape') {
+                        e.stopPropagation()
+                        setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, isRenaming: false, renameDraft: undefined } : t))
+                        return
+                      }
+                      if (e.key === 'Enter') {
+                        e.stopPropagation()
+                        const nextName = (tab.renameDraft ?? tab.name).trim()
+                        const finalName = nextName || tab.name
+                        setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, name: finalName, isRenaming: false, renameDraft: undefined, needsTitle: false } : t))
+                        try {
+                          await window.electronAPI.copilot.renameSession(tab.id, finalName)
+                        } catch (err) {
+                          console.error('Failed to rename session:', err)
+                        }
+                      }
+                    }}
+                    onBlur={async () => {
+                      const nextName = (tab.renameDraft ?? tab.name).trim()
+                      const finalName = nextName || tab.name
+                      setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, name: finalName, isRenaming: false, renameDraft: undefined, needsTitle: false } : t))
+                      try {
+                        await window.electronAPI.copilot.renameSession(tab.id, finalName)
+                      } catch (err) {
+                        console.error('Failed to rename session:', err)
+                      }
+                    }}
+                    className="flex-1 min-w-0 bg-[#0d1117] border border-[#30363d] rounded px-1 py-0.5 text-xs text-[#e6edf3] outline-none focus:border-[#58a6ff]"
+                  />
+                ) : (
+                  <span
+                    className="flex-1 truncate"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, isRenaming: true, renameDraft: t.name } : t))
+                    }}
+                    title="Double-click to rename"
+                  >
+                    {tab.name}
+                  </span>
+                )}
                 <button
                   onClick={(e) => handleCloseTab(tab.id, e)}
                   className="shrink-0 p-0.5 rounded hover:bg-[#30363d] opacity-0 group-hover:opacity-100 transition-opacity"

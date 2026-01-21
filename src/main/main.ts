@@ -97,6 +97,7 @@ interface StoredSession {
   sessionId: string
   model: string
   cwd: string
+  name?: string
   editedFiles?: string[]
   alwaysAllowed?: string[]
 }
@@ -568,7 +569,7 @@ async function initCopilot(): Promise<void> {
           sessionId, 
           model: sessionModel,
           cwd: sessionCwd,
-          name: meta.summary || undefined,
+          name: storedSession?.name || meta.summary || undefined,
           editedFiles: storedSession?.editedFiles || [],
           alwaysAllowed: storedAlwaysAllowed
         })
@@ -945,6 +946,16 @@ ipcMain.handle('copilot:removeAlwaysAllowed', async (_event, data: { sessionId: 
 ipcMain.handle('copilot:saveOpenSessions', async (_event, openSessions: StoredSession[]) => {
   store.set('openSessions', openSessions)
   console.log(`Saved ${openSessions.length} open sessions with models`)
+  return { success: true }
+})
+
+ipcMain.handle('copilot:renameSession', async (_event, data: { sessionId: string; name: string }) => {
+  const openSessions = store.get('openSessions') as StoredSession[] || []
+  const updated = openSessions.map(s =>
+    s.sessionId === data.sessionId ? { ...s, name: data.name } : s
+  )
+  store.set('openSessions', updated)
+  console.log(`Renamed session ${data.sessionId} to ${data.name}`)
   return { success: true }
 })
 
