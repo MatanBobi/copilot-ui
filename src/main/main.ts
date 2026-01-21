@@ -496,9 +496,9 @@ async function initCopilot(): Promise<void> {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 900,
+    width: 1200,
     height: 650,
-    minWidth: 700,
+    minWidth: 900,
     minHeight: 500,
     frame: false,
     backgroundColor: '#0d1117',
