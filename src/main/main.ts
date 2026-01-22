@@ -10,6 +10,7 @@ const execAsync = promisify(exec)
 import { CopilotClient, CopilotSession, PermissionRequest, PermissionRequestResult } from '@github/copilot-sdk'
 import Store from 'electron-store'
 import log from 'electron-log/main'
+import { extractExecutables } from './utils/extractExecutables'
 
 // MCP Server Configuration types (matching SDK)
 interface MCPServerConfigBase {
@@ -286,9 +287,6 @@ const AVAILABLE_MODELS: ModelInfo[] = [
   { id: 'claude-opus-4.5', name: 'Claude Opus 4.5', multiplier: 3 },
 ]
 
-// Commands that should include their subcommand for granular permission control
-const SUBCOMMAND_EXECUTABLES = ['git', 'npm', 'yarn', 'pnpm', 'docker', 'kubectl']
-
 // Global allowlist of low-risk, read-only shell commands.
 // These are auto-approved for all sessions and intentionally NOT persisted/shown in the per-session "Always Allowed" UI.
 const GLOBAL_AUTO_APPROVED_SHELL_EXECUTABLES = new Set([
@@ -330,94 +328,6 @@ const GLOBAL_AUTO_APPROVED_SHELL_EXECUTABLES = new Set([
   'shasum',
   'md5',
 ])
-
-// Extract all executables from a shell command
-function extractExecutables(command: string): string[] {
-  const executables: string[] = []
-  
-  // Remove heredocs first (<<'MARKER' ... MARKER or <<MARKER ... MARKER)
-  let cleaned = command.replace(/<<['"]?(\w+)['"]?[\s\S]*?\n\1(\n|$)/g, '')
-  
-  // Also handle heredocs that might not have closing marker in view
-  cleaned = cleaned.replace(/<<['"]?\w+['"]?[\s\S]*$/g, '')
-  
-  // Remove string literals to avoid false positives
-  cleaned = cleaned
-    .replace(/"[^"]*"/g, '""')
-    .replace(/'[^']*'/g, "''")
-    .replace(/`[^`]*`/g, '``')
-  
-  // Remove shell redirections like 2>&1, >&2, 2>/dev/null, etc.
-  cleaned = cleaned.replace(/\d*>&?\d+/g, '')      // 2>&1, >&1, 1>&2
-  cleaned = cleaned.replace(/\d+>>\S+/g, '')       // 2>>/dev/null
-  cleaned = cleaned.replace(/\d+>\S+/g, '')        // 2>/dev/null
-  
-  // Split on shell operators and separators
-  const segments = cleaned.split(/[;&|]+/)
-  
-  for (const segment of segments) {
-    const trimmed = segment.trim()
-    if (!trimmed) continue
-    
-    // Skip if it looks like a heredoc marker line
-    if (/^[A-Z]+$/.test(trimmed)) continue
-    
-    // Get first word of segment
-    const parts = trimmed.split(/\s+/)
-    const prefixes = ['sudo', 'env', 'nohup', 'nice', 'time', 'command']
-    
-    let foundExec: string | null = null
-    let subcommand: string | null = null
-    
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i]
-      // Skip environment variable assignments
-      if (part.includes('=') && !part.startsWith('-')) continue
-      // Skip flags
-      if (part.startsWith('-')) continue
-      // Skip common prefixes
-      if (prefixes.includes(part)) continue
-      // Skip empty or punctuation
-      if (!part || /^[<>|&;()]+$/.test(part)) continue
-      // Skip redirection targets
-      if (part.startsWith('>') || part.startsWith('<')) continue
-      
-      // Found potential executable - remove path prefix
-      const exec = part.replace(/^.*\//, '')
-      // Validate it looks like a command (alphanumeric, dashes, underscores)
-      if (exec && /^[a-zA-Z0-9_-]+$/.test(exec)) {
-        if (!foundExec) {
-          foundExec = exec
-          // Check if this needs subcommand handling
-          if (SUBCOMMAND_EXECUTABLES.includes(exec)) {
-            // Look for subcommand in next non-flag part
-            for (let j = i + 1; j < parts.length; j++) {
-              const nextPart = parts[j]
-              if (nextPart.startsWith('-')) continue
-              if (nextPart.includes('=')) continue
-              if (/^[a-zA-Z0-9_-]+$/.test(nextPart)) {
-                subcommand = nextPart
-                break
-              }
-              break // Stop if we hit something unexpected
-            }
-          }
-        }
-        break
-      }
-    }
-    
-    if (foundExec) {
-      // Combine executable with subcommand for granular control
-      const execId = subcommand ? `${foundExec} ${subcommand}` : foundExec
-      if (!executables.includes(execId)) {
-        executables.push(execId)
-      }
-    }
-  }
-  
-  return executables
-}
 
 // Normalize stored identifiers so UI/behavior stays stable across versions
 function normalizeAlwaysAllowed(id: string): string {
