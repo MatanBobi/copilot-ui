@@ -713,8 +713,11 @@ const App: React.FC = () => {
       )
       
       if (result.success) {
-        // Clear the edited files list
-        updateTab(activeTab.id, { editedFiles: [] })
+        // Clear the edited files list and refresh git branch widget
+        updateTab(activeTab.id, { 
+          editedFiles: [],
+          gitBranchRefresh: (activeTab.gitBranchRefresh || 0) + 1
+        })
         setShowCommitModal(false)
         setCommitMessage('')
       } else {

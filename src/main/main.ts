@@ -1118,6 +1118,12 @@ ipcMain.handle('git:getDiff', async (_event, data: { cwd: string; files: string[
 // Git operations - commit and push
 ipcMain.handle('git:commitAndPush', async (_event, data: { cwd: string; files: string[]; message: string }) => {
   try {
+    // Get current branch name
+    const { stdout: branchOutput } = await execAsync('git branch --show-current', { cwd: data.cwd })
+    const currentBranch = branchOutput.trim()
+    const isMainBranch = currentBranch === 'main' || currentBranch === 'master'
+    const targetBranch = currentBranch === 'master' ? 'master' : 'main'
+    
     // Stage the files
     for (const file of data.files) {
       await execAsync(`git add "${file}"`, { cwd: data.cwd })
@@ -1133,17 +1139,28 @@ ipcMain.handle('git:commitAndPush', async (_event, data: { cwd: string; files: s
       // If push fails due to no upstream branch, set upstream and push
       const errorMsg = String(pushError)
       if (errorMsg.includes('has no upstream branch')) {
-        // Get current branch name
-        const { stdout: branch } = await execAsync('git branch --show-current', { cwd: data.cwd })
-        const branchName = branch.trim()
         // Set upstream and push
-        await execAsync(`git push --set-upstream origin ${branchName}`, { cwd: data.cwd })
+        await execAsync(`git push --set-upstream origin ${currentBranch}`, { cwd: data.cwd })
       } else {
         throw pushError
       }
     }
     
-    return { success: true }
+    // If not on main/master, merge to main and push
+    if (!isMainBranch && currentBranch) {
+      // Switch to main/master
+      await execAsync(`git checkout ${targetBranch}`, { cwd: data.cwd })
+      
+      // Merge the feature branch
+      await execAsync(`git merge ${currentBranch}`, { cwd: data.cwd })
+      
+      // Push main/master
+      await execAsync('git push', { cwd: data.cwd })
+      
+      return { success: true, mergedToMain: true, finalBranch: targetBranch }
+    }
+    
+    return { success: true, mergedToMain: false, finalBranch: currentBranch }
   } catch (error) {
     console.error('Git commit/push failed:', error)
     return { success: false, error: String(error) }
