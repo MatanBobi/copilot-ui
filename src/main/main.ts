@@ -1475,16 +1475,27 @@ ipcMain.handle('git:createPullRequest', async (_event, data: { cwd: string; titl
       }
     }
     
-    // Create PR
-    const title = data.title || currentBranch.replace(/[-_]/g, ' ')
-    const draftFlag = data.draft ? '--draft' : ''
-    const { stdout: prOutput } = await execAsync(
-      `gh pr create --title "${title.replace(/"/g, '\\"')}" --fill ${draftFlag}`,
-      { cwd: data.cwd }
-    )
+    // Get remote URL to construct PR URL
+    const { stdout: remoteUrl } = await execAsync('git remote get-url origin', { cwd: data.cwd })
+    const remote = remoteUrl.trim()
     
-    // Extract PR URL from output
-    const prUrl = prOutput.trim().split('\n').pop() || ''
+    // Parse GitHub URL from remote (handles both HTTPS and SSH formats)
+    let repoPath = ''
+    if (remote.startsWith('git@github.com:')) {
+      repoPath = remote.replace('git@github.com:', '').replace(/\.git$/, '')
+    } else if (remote.includes('github.com')) {
+      const match = remote.match(/github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/)
+      repoPath = match ? match[1] : ''
+    }
+    
+    if (!repoPath) {
+      return { success: false, error: 'Could not parse GitHub repository from remote URL' }
+    }
+    
+    // Construct PR creation URL - GitHub will auto-fill the form
+    const title = data.title || currentBranch.replace(/[-_]/g, ' ')
+    const encodedTitle = encodeURIComponent(title)
+    const prUrl = `https://github.com/${repoPath}/compare/main...${currentBranch}?quick_pull=1&title=${encodedTitle}`
     
     return { success: true, prUrl, branch: currentBranch }
   } catch (error) {
