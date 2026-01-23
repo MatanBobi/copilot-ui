@@ -1739,19 +1739,22 @@ nativeTheme.on('updated', () => {
   }
 })
 
-// App lifecycle - enforce single instance
-const gotTheLock = app.requestSingleInstanceLock()
+// App lifecycle - enforce single instance (skip in dev mode to allow dev and production to run together)
+const isDev = !!process.env.ELECTRON_RENDERER_URL
+const gotTheLock = isDev ? true : app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    // Focus existing window if someone tries to open a second instance
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
-  })
+  if (!isDev) {
+    app.on('second-instance', () => {
+      // Focus existing window if someone tries to open a second instance
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.focus()
+      }
+    })
+  }
 
   app.whenReady().then(() => {
     console.log('Available models:', AVAILABLE_MODELS.map(m => `${m.name} (${m.multiplier}×)`).join(', '))
