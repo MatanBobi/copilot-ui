@@ -103,6 +103,9 @@ const electronAPI = {
     removeAlwaysAllowed: (sessionId: string, executable: string): Promise<{ success: boolean }> => {
       return ipcRenderer.invoke('copilot:removeAlwaysAllowed', { sessionId, executable })
     },
+    addAlwaysAllowed: (sessionId: string, command: string): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('copilot:addAlwaysAllowed', { sessionId, command })
+    },
     onError: (callback: (data: { sessionId: string; message: string }) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; message: string }): void => callback(data)
       ipcRenderer.on('copilot:error', handler)

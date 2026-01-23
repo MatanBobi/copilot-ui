@@ -1237,6 +1237,17 @@ ipcMain.handle('copilot:removeAlwaysAllowed', async (_event, data: { sessionId: 
   return { success: true }
 })
 
+// Add a command to always-allowed for a session (manual entry)
+ipcMain.handle('copilot:addAlwaysAllowed', async (_event, data: { sessionId: string; command: string }) => {
+  const sessionState = sessions.get(data.sessionId)
+  if (sessionState) {
+    const normalized = normalizeAlwaysAllowed(data.command.trim())
+    sessionState.alwaysAllowed.add(normalized)
+    console.log(`[${data.sessionId}] Manually added to always allow:`, normalized)
+  }
+  return { success: true }
+})
+
 // Save open session IDs to persist across restarts
 ipcMain.handle('copilot:saveOpenSessions', async (_event, openSessions: StoredSession[]) => {
   store.set('openSessions', openSessions)
