@@ -1157,6 +1157,15 @@ const App: React.FC = () => {
 
   // Handle opening an existing worktree session
   const handleOpenWorktreeSession = async (session: { worktreePath: string; branch: string }) => {
+    // Check if this worktree is already open in an existing tab
+    const existingTab = tabs.find(tab => tab.cwd === session.worktreePath);
+    if (existingTab) {
+      // Switch to the existing tab instead of opening a new one
+      setActiveTabId(existingTab.id);
+      setShowWorktreeList(false);
+      return;
+    }
+    
     setShowWorktreeList(false);
     await handleWorktreeSessionCreated(session.worktreePath, session.branch);
   };
