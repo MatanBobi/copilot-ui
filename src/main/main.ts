@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, nativeTheme } from 'electron'
-import { join } from 'path'
+import { join, dirname } from 'path'
 import { existsSync, mkdirSync, readdirSync, readFileSync, copyFileSync } from 'fs'
 import { exec } from 'child_process'
 import { promisify } from 'util'
@@ -246,6 +246,7 @@ interface SessionState {
   model: string
   cwd: string  // Current working directory for the session
   alwaysAllowed: Set<string>  // Per-session always-allowed executables
+  allowedPaths: Set<string>  // Per-session allowed out-of-scope paths (parent directories)
 }
 const sessions = new Map<string, SessionState>()
 let activeSessionId: string | null = null
@@ -349,6 +350,7 @@ const pendingPermissions = new Map<string, {
   request: PermissionRequest
   executable: string
   sessionId: string
+  outOfScopePath?: string  // Store path for out-of-scope reads to remember parent dir
 }>()
 
 // Track in-flight permission requests by session+executable to deduplicate parallel requests
@@ -542,6 +544,7 @@ async function handlePermissionRequest(
   
   // For read requests, check if in-scope (auto-approve) or out-of-scope (need permission)
   let isOutOfScope = false
+  let outOfScopePath: string | undefined
   if (request.kind === 'read' && sessionState) {
     const requestPath = req.path as string | undefined
     const sessionCwd = sessionState.cwd
@@ -549,7 +552,22 @@ async function handlePermissionRequest(
     if (requestPath) {
       // Check if path is outside the session's working directory
       if (!requestPath.startsWith(sessionCwd + '/') && !requestPath.startsWith(sessionCwd + '\\') && requestPath !== sessionCwd) {
+        // Check if path is under a previously allowed path
+        let isAllowedPath = false
+        for (const allowedPath of sessionState.allowedPaths) {
+          if (requestPath.startsWith(allowedPath + '/') || requestPath.startsWith(allowedPath + '\\') || requestPath === allowedPath) {
+            isAllowedPath = true
+            break
+          }
+        }
+        
+        if (isAllowedPath) {
+          console.log(`[${ourSessionId}] Auto-approved out-of-scope read (allowed path):`, requestPath)
+          return { kind: 'approved' }
+        }
+        
         isOutOfScope = true
+        outOfScopePath = requestPath
         console.log(`[${ourSessionId}] Out-of-scope read detected:`, requestPath, 'not in', sessionCwd)
       } else {
         // In-scope reads are auto-approved (like CLI behavior)
@@ -580,7 +598,7 @@ async function handlePermissionRequest(
   
   // Create new permission request and track it
   const permissionPromise = new Promise<PermissionRequestResult>((resolve) => {
-    pendingPermissions.set(requestId, { resolve, request, executable, sessionId: ourSessionId })
+    pendingPermissions.set(requestId, { resolve, request, executable, sessionId: ourSessionId, outOfScopePath })
     mainWindow!.webContents.send('copilot:permission', {
       requestId,
       sessionId: ourSessionId,
@@ -662,7 +680,7 @@ async function createNewSession(model?: string, cwd?: string): Promise<string> {
     }
   })
   
-  sessions.set(sessionId, { session: newSession, client, model: sessionModel, cwd: sessionCwd, alwaysAllowed: new Set() })
+  sessions.set(sessionId, { session: newSession, client, model: sessionModel, cwd: sessionCwd, alwaysAllowed: new Set(), allowedPaths: new Set() })
   activeSessionId = sessionId
   
   console.log(`Created session ${sessionId} with model ${sessionModel} in ${sessionCwd}`)
@@ -754,7 +772,7 @@ async function initCopilot(): Promise<void> {
         
         // Restore alwaysAllowed set from stored data (normalize legacy ids)
         const alwaysAllowedSet = new Set(storedAlwaysAllowed.map(normalizeAlwaysAllowed))
-        sessions.set(sessionId, { session, client, model: sessionModel, cwd: sessionCwd, alwaysAllowed: alwaysAllowedSet })
+        sessions.set(sessionId, { session, client, model: sessionModel, cwd: sessionCwd, alwaysAllowed: alwaysAllowedSet, allowedPaths: new Set() })
         resumedSessions.push({ 
           sessionId, 
           model: sessionModel,
@@ -1055,6 +1073,16 @@ ipcMain.handle('copilot:permissionResponse', async (_event, data: {
         sessionState.alwaysAllowed.add(normalizeAlwaysAllowed(exec.trim()))
       }
       console.log(`[${pending.sessionId}] Added to always allow:`, executables.map(normalizeAlwaysAllowed))
+    }
+  }
+  
+  // For out-of-scope reads that are approved, remember the parent directory
+  if ((data.decision === 'approved' || data.decision === 'always') && pending.outOfScopePath) {
+    const sessionState = sessions.get(pending.sessionId)
+    if (sessionState) {
+      const parentDir = dirname(pending.outOfScopePath)
+      sessionState.allowedPaths.add(parentDir)
+      console.log(`[${pending.sessionId}] Added to allowed paths:`, parentDir)
     }
   }
   
@@ -1581,7 +1609,7 @@ ipcMain.handle('copilot:resumePreviousSession', async (_event, sessionId: string
     }
   })
   
-  sessions.set(sessionId, { session, client, model: sessionModel, cwd: sessionCwd, alwaysAllowed: new Set() })
+  sessions.set(sessionId, { session, client, model: sessionModel, cwd: sessionCwd, alwaysAllowed: new Set(), allowedPaths: new Set() })
   activeSessionId = sessionId
   
   console.log(`Resumed previous session ${sessionId} in ${sessionCwd}`)
