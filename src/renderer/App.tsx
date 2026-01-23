@@ -63,6 +63,8 @@ const App: React.FC = () => {
   );
   const [showPreviousSessions, setShowPreviousSessions] = useState(false);
   const [showAlwaysAllowed, setShowAlwaysAllowed] = useState(false);
+  const [showAddCommand, setShowAddCommand] = useState(false);
+  const [addCommandValue, setAddCommandValue] = useState("");
   const [showEditedFiles, setShowEditedFiles] = useState(true);
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
@@ -851,6 +853,23 @@ const App: React.FC = () => {
       updateTab(activeTab.id, { alwaysAllowed: list });
     } catch (error) {
       console.error("Failed to fetch always-allowed:", error);
+    }
+  };
+
+  const handleAddAlwaysAllowed = async () => {
+    if (!activeTab || !addCommandValue.trim()) return;
+    try {
+      await window.electronAPI.copilot.addAlwaysAllowed(
+        activeTab.id,
+        addCommandValue.trim(),
+      );
+      updateTab(activeTab.id, {
+        alwaysAllowed: [...activeTab.alwaysAllowed, addCommandValue.trim()],
+      });
+      setAddCommandValue("");
+      setShowAddCommand(false);
+    } catch (error) {
+      console.error("Failed to add always-allowed:", error);
     }
   };
 
@@ -2446,24 +2465,68 @@ const App: React.FC = () => {
 
               {/* Always Allowed */}
               <div className="border-b border-copilot-border">
-                <button
-                  onClick={() => {
-                    setShowAlwaysAllowed(!showAlwaysAllowed);
-                    if (!showAlwaysAllowed) refreshAlwaysAllowed();
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-copilot-text-muted hover:text-copilot-text hover:bg-copilot-surface transition-colors"
-                >
-                  <ChevronRightIcon
-                    size={8}
-                    className={`transition-transform ${showAlwaysAllowed ? "rotate-90" : ""}`}
+                <div className="flex items-center">
+                  <button
+                    onClick={() => {
+                      setShowAlwaysAllowed(!showAlwaysAllowed);
+                      if (!showAlwaysAllowed) refreshAlwaysAllowed();
+                    }}
+                    className="flex-1 flex items-center gap-2 px-3 py-2 text-xs text-copilot-text-muted hover:text-copilot-text hover:bg-copilot-surface transition-colors"
+                  >
+                    <ChevronRightIcon
+                      size={8}
+                      className={`transition-transform ${showAlwaysAllowed ? "rotate-90" : ""}`}
+                    />
+                    <span>Always Allowed</span>
+                    {(activeTab?.alwaysAllowed.length || 0) > 0 && (
+                      <span className="text-copilot-accent">
+                        ({activeTab?.alwaysAllowed.length})
+                      </span>
+                    )}
+                  </button>
+                  <IconButton
+                    icon={<PlusIcon size={12} />}
+                    onClick={() => {
+                      setShowAddCommand(!showAddCommand);
+                      if (!showAlwaysAllowed) {
+                        setShowAlwaysAllowed(true);
+                        refreshAlwaysAllowed();
+                      }
+                    }}
+                    variant="success"
+                    size="sm"
+                    title="Add allowed command"
+                    className="mr-1"
                   />
-                  <span>Always Allowed</span>
-                  {(activeTab?.alwaysAllowed.length || 0) > 0 && (
-                    <span className="text-copilot-accent">
-                      ({activeTab?.alwaysAllowed.length})
-                    </span>
-                  )}
-                </button>
+                </div>
+                {showAddCommand && activeTab && (
+                  <div className="px-3 pb-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={addCommandValue}
+                        onChange={(e) => setAddCommandValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAddAlwaysAllowed();
+                          if (e.key === "Escape") {
+                            setShowAddCommand(false);
+                            setAddCommandValue("");
+                          }
+                        }}
+                        placeholder="e.g., npm, git, python"
+                        className="flex-1 px-2 py-1 text-[10px] bg-copilot-surface border border-copilot-border rounded text-copilot-text placeholder:text-copilot-text-muted focus:outline-none focus:border-copilot-accent"
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleAddAlwaysAllowed}
+                        disabled={!addCommandValue.trim()}
+                        className="px-2 py-1 text-[10px] bg-copilot-accent text-copilot-text rounded hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {showAlwaysAllowed && activeTab && (
                   <div className="max-h-32 overflow-y-auto">
                     {activeTab.alwaysAllowed.length === 0 ? (
