@@ -75,6 +75,7 @@ const App: React.FC = () => {
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitAction, setCommitAction] = useState<'push' | 'merge' | 'pr'>('push');
   const [removeWorktreeAfterMerge, setRemoveWorktreeAfterMerge] = useState(false);
+  const [pendingMergeInfo, setPendingMergeInfo] = useState<{ incomingFiles: string[] } | null>(null);
 
   // Theme context
   const {
@@ -1005,6 +1006,20 @@ const App: React.FC = () => {
       );
 
       if (result.success) {
+        // If merge synced with main and brought in changes, notify user to test first
+        if (result.mainSyncedWithChanges && commitAction === 'merge') {
+          setPendingMergeInfo({ incomingFiles: result.incomingFiles || [] });
+          // Clear the edited files list and refresh git branch widget (commit was successful)
+          updateTab(activeTab.id, { 
+            editedFiles: [],
+            gitBranchRefresh: (activeTab.gitBranchRefresh || 0) + 1
+          });
+          setShowCommitModal(false);
+          setCommitMessage('');
+          setIsCommitting(false);
+          return;
+        }
+        
         // If creating PR, do that after commit
         if (commitAction === 'pr') {
           const prResult = await window.electronAPI.git.createPullRequest(activeTab.cwd, commitMessage.split('\n')[0]);
@@ -2921,6 +2936,84 @@ Start by exploring the codebase to understand the current implementation, then m
               </Modal.Footer>
             </>
           )}
+        </Modal.Body>
+      </Modal>
+
+      {/* Incoming Changes Modal - shown when merge from main brought changes */}
+      <Modal
+        isOpen={!!pendingMergeInfo && !!activeTab}
+        onClose={() => setPendingMergeInfo(null)}
+        title="Main Branch Had Changes"
+        width="500px"
+      >
+        <Modal.Body>
+          <div className="mb-4">
+            <div className="text-sm text-copilot-text mb-2">
+              Your branch has been synced with the latest changes from main. The following files were updated:
+            </div>
+            {pendingMergeInfo && pendingMergeInfo.incomingFiles.length > 0 ? (
+              <div className="bg-copilot-bg rounded border border-copilot-surface max-h-40 overflow-y-auto">
+                {pendingMergeInfo.incomingFiles.map((filePath) => (
+                  <div
+                    key={filePath}
+                    className="px-3 py-1.5 text-xs text-copilot-warning font-mono truncate"
+                    title={filePath}
+                  >
+                    {filePath}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-copilot-text-muted italic">
+                (Unable to determine changed files)
+              </div>
+            )}
+          </div>
+          <div className="text-sm text-copilot-text-muted mb-4">
+            We recommend testing your changes before completing the merge to main.
+          </div>
+          <Modal.Footer>
+            <Button
+              variant="ghost"
+              onClick={() => setPendingMergeInfo(null)}
+            >
+              Test First
+            </Button>
+            <Button
+              variant="primary"
+              onClick={async () => {
+                if (!activeTab) return;
+                setIsCommitting(true);
+                try {
+                  const result = await window.electronAPI.git.mergeToMain(activeTab.cwd, removeWorktreeAfterMerge);
+                  if (result.success) {
+                    if (removeWorktreeAfterMerge && activeTab.cwd.includes('.copilot-sessions')) {
+                      const sessionId = activeTab.cwd.split('/').pop() || '';
+                      if (sessionId) {
+                        await window.electronAPI.worktree.removeSession({ sessionId, force: true });
+                        handleCloseTab(activeTab.id);
+                      }
+                    }
+                    updateTab(activeTab.id, { 
+                      gitBranchRefresh: (activeTab.gitBranchRefresh || 0) + 1
+                    });
+                  } else {
+                    setCommitError(result.error || 'Merge failed');
+                  }
+                } catch (error) {
+                  setCommitError(String(error));
+                } finally {
+                  setIsCommitting(false);
+                  setPendingMergeInfo(null);
+                  setCommitAction('push');
+                  setRemoveWorktreeAfterMerge(false);
+                }
+              }}
+              isLoading={isCommitting}
+            >
+              Merge to Main Now
+            </Button>
+          </Modal.Footer>
         </Modal.Body>
       </Modal>
 

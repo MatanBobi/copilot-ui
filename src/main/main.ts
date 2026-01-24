@@ -1411,6 +1411,9 @@ ipcMain.handle('git:commitAndPush', async (_event, data: { cwd: string; files: s
           // Ignore fetch errors
         }
         
+        // Get HEAD before merge to detect if sync brought in changes
+        const { stdout: headBefore } = await execAsync('git rev-parse HEAD', { cwd: data.cwd })
+        
         // Merge main into the feature branch first (in the worktree) to ensure it's up-to-date
         // This prevents losing changes when the feature branch was based on an older main
         try {
@@ -1424,11 +1427,35 @@ ipcMain.handle('git:commitAndPush', async (_event, data: { cwd: string; files: s
           // Continue if no conflicts - branch might already be up to date
         }
         
+        // Get HEAD after merge to check if changes were brought in
+        const { stdout: headAfter } = await execAsync('git rev-parse HEAD', { cwd: data.cwd })
+        const syncBroughtChanges = headBefore.trim() !== headAfter.trim()
+        
         // Push the updated feature branch
         try {
           await execAsync('git push', { cwd: data.cwd })
         } catch {
           // Ignore - might already be up to date
+        }
+        
+        // If sync brought in changes, return early so user can test before merging
+        if (syncBroughtChanges) {
+          // Get list of files that were changed by the merge
+          let incomingFiles: string[] = []
+          try {
+            const { stdout: diffFiles } = await execAsync(`git diff --name-only ${headBefore.trim()} ${headAfter.trim()}`, { cwd: data.cwd })
+            incomingFiles = diffFiles.trim().split('\n').filter(f => f)
+          } catch {
+            // Ignore errors
+          }
+          
+          return { 
+            success: true, 
+            mergedToMain: false, 
+            finalBranch: currentBranch,
+            mainSyncedWithChanges: true,
+            incomingFiles
+          }
         }
         
         // Merge the feature branch into main (from the main repo)
