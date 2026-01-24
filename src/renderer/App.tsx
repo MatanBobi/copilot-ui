@@ -234,8 +234,6 @@ const App: React.FC = () => {
               alwaysAllowed: [],
               editedFiles: [],
               currentIntent: null,
-              autoBranchingEnabled: true,
-              autoBranchingDone: false,
               gitBranchRefresh: 0,
             };
             setTabs([newTab]);
@@ -262,8 +260,6 @@ const App: React.FC = () => {
           alwaysAllowed: s.alwaysAllowed || [],
           editedFiles: s.editedFiles || [],
           currentIntent: null,
-          autoBranchingEnabled: true,
-          autoBranchingDone: false,
           gitBranchRefresh: 0,
         }));
 
@@ -509,66 +505,8 @@ const App: React.FC = () => {
         // Skip other internal tools
         if (name === "update_todo") return;
 
-        // Auto-checkout branch on first file write (per session)
+        // Track edited/created files at start time (we have reliable input here)
         const isFileOperation = name === "edit" || name === "create";
-        if (isFileOperation) {
-          setTabs((prev) =>
-            prev.map((tab) => {
-              if (tab.id !== sessionId) return tab;
-              if (!tab.autoBranchingEnabled || tab.autoBranchingDone)
-                return tab;
-
-              // Mark as done immediately to prevent repeated attempts
-              const next = { ...tab, autoBranchingDone: true };
-
-              (async () => {
-                try {
-                  const branchRes = await window.electronAPI.git.getBranch(
-                    tab.cwd,
-                  );
-                  const current = branchRes.success
-                    ? branchRes.branch || ""
-                    : "";
-                  if (current && current !== "main" && current !== "master") {
-                    return;
-                  }
-
-                  const base =
-                    (tab.currentIntent || "changes")
-                      .toLowerCase()
-                      .replace(/[^a-z0-9]+/g, "-")
-                      .replace(/^-+|-+$/g, "")
-                      .slice(0, 40) || "changes";
-                  const stamp = new Date()
-                    .toISOString()
-                    .slice(0, 10)
-                    .replace(/-/g, "");
-                  const branchName = `auto/${base}-${stamp}`;
-
-                  const checkoutRes =
-                    await window.electronAPI.git.checkoutBranch(
-                      tab.cwd,
-                      branchName,
-                    );
-                  if (checkoutRes.success) {
-                    updateTab(sessionId, {
-                      gitBranchRefresh: (tab.gitBranchRefresh || 0) + 1,
-                    });
-                  } else {
-                    console.warn(
-                      "Auto-branch checkout failed:",
-                      checkoutRes.error,
-                    );
-                  }
-                } catch (err) {
-                  console.warn("Auto-branch checkout errored:", err);
-                }
-              })();
-
-              return next;
-            }),
-          );
-        }
 
         setTabs((prev) =>
           prev.map((tab) => {
@@ -1150,8 +1088,6 @@ const App: React.FC = () => {
         alwaysAllowed: [],
         editedFiles: [],
         currentIntent: null,
-        autoBranchingEnabled: true,
-        autoBranchingDone: false,
         gitBranchRefresh: 0,
       };
       setTabs((prev) => [...prev, newTab]);
@@ -1224,8 +1160,6 @@ const App: React.FC = () => {
         alwaysAllowed: preApprovedCommands,
         editedFiles: [],
         currentIntent: null,
-        autoBranchingEnabled: false, // Already on the right branch
-        autoBranchingDone: true,
         gitBranchRefresh: 0,
       };
       setTabs((prev) => [...prev, newTab]);
@@ -1332,8 +1266,6 @@ Start by exploring the codebase to understand the current implementation, then m
           alwaysAllowed: [],
           editedFiles: [],
           currentIntent: null,
-          autoBranchingEnabled: true,
-          autoBranchingDone: false,
           gitBranchRefresh: 0,
         };
         setTabs([newTab]);
@@ -1396,8 +1328,6 @@ Start by exploring the codebase to understand the current implementation, then m
         alwaysAllowed: result.alwaysAllowed || [],
         editedFiles: result.editedFiles || [],
         currentIntent: null,
-        autoBranchingEnabled: true,
-        autoBranchingDone: false,
         gitBranchRefresh: 0,
       };
 
@@ -1473,8 +1403,6 @@ Start by exploring the codebase to understand the current implementation, then m
           alwaysAllowed: [],
           editedFiles: [],
           currentIntent: null,
-          autoBranchingEnabled: true,
-          autoBranchingDone: false,
           gitBranchRefresh: 0,
         };
         setTabs((prev) => [...prev, newTab]);
@@ -2539,29 +2467,6 @@ Start by exploring the codebase to understand the current implementation, then m
                   <div className="text-[10px] text-copilot-text-muted uppercase tracking-wide">
                     Git Branch
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!activeTab) return;
-                      updateTab(activeTab.id, {
-                        autoBranchingEnabled: !activeTab.autoBranchingEnabled,
-                      });
-                    }}
-                    className="text-[10px] uppercase tracking-wide shrink-0 text-copilot-text-muted hover:text-copilot-text transition-colors"
-                    aria-pressed={!!activeTab?.autoBranchingEnabled}
-                    title="Automatically checks out a new branch for the coding task"
-                  >
-                    Auto-checkout:{" "}
-                    <span
-                      className={
-                        activeTab?.autoBranchingEnabled
-                          ? "text-copilot-success"
-                          : "text-copilot-text-muted"
-                      }
-                    >
-                      {activeTab?.autoBranchingEnabled ? "ON" : "OFF"}
-                    </span>
-                  </button>
                 </div>
                 <GitBranchWidget
                   cwd={activeTab?.cwd}
