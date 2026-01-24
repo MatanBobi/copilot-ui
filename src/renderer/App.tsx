@@ -285,6 +285,7 @@ const App: React.FC = () => {
               alwaysAllowed: [],
               editedFiles: [],
               currentIntent: null,
+              currentIntentTimestamp: null,
               gitBranchRefresh: 0,
             };
             setTabs([newTab]);
@@ -311,6 +312,7 @@ const App: React.FC = () => {
           alwaysAllowed: s.alwaysAllowed || [],
           editedFiles: s.editedFiles || [],
           currentIntent: null,
+          currentIntentTimestamp: null,
           gitBranchRefresh: 0,
         }));
 
@@ -395,7 +397,7 @@ const App: React.FC = () => {
               ...tab,
               messages: [
                 ...tab.messages.slice(0, -1),
-                { ...last, content, isStreaming: false },
+                { ...last, content, isStreaming: false, timestamp: Date.now() },
               ],
             };
           }
@@ -408,6 +410,7 @@ const App: React.FC = () => {
                 role: "assistant",
                 content,
                 isStreaming: false,
+                timestamp: Date.now(),
               },
             ],
           };
@@ -513,6 +516,7 @@ const App: React.FC = () => {
             isProcessing: false,
             activeTools: [],
             currentIntent: null,
+            currentIntentTimestamp: null,
             // Deactivate Ralph if it was active
             ralphConfig: tab.ralphConfig?.active 
               ? { ...tab.ralphConfig, active: false }
@@ -546,7 +550,7 @@ const App: React.FC = () => {
           if (intent) {
             setTabs((prev) =>
               prev.map((tab) =>
-                tab.id === sessionId ? { ...tab, currentIntent: intent } : tab,
+                tab.id === sessionId ? { ...tab, currentIntent: intent, currentIntentTimestamp: Date.now() } : tab,
               ),
             );
           }
@@ -689,6 +693,7 @@ const App: React.FC = () => {
                   id: generateId(),
                   role: "assistant" as const,
                   content: `⚠️ ${message}`,
+                  timestamp: Date.now(),
                 },
               ]
             : tab.messages;
@@ -754,6 +759,7 @@ const App: React.FC = () => {
           role: "assistant",
           content: "",
           isStreaming: true,
+          timestamp: Date.now(),
         },
       ],
       isProcessing: true,
@@ -1139,6 +1145,7 @@ const App: React.FC = () => {
         alwaysAllowed: [],
         editedFiles: [],
         currentIntent: null,
+        currentIntentTimestamp: null,
         gitBranchRefresh: 0,
       };
       setTabs((prev) => [...prev, newTab]);
@@ -1198,6 +1205,7 @@ const App: React.FC = () => {
         alwaysAllowed: ['write'], // Pre-approved for worktree sessions
         editedFiles: [],
         currentIntent: null,
+        currentIntentTimestamp: null,
         gitBranchRefresh: 0,
       };
       setTabs((prev) => [...prev, newTab]);
@@ -1247,6 +1255,7 @@ const App: React.FC = () => {
           alwaysAllowed: [],
           editedFiles: [],
           currentIntent: null,
+          currentIntentTimestamp: null,
           gitBranchRefresh: 0,
         };
         setTabs([newTab]);
@@ -1309,6 +1318,7 @@ const App: React.FC = () => {
         alwaysAllowed: result.alwaysAllowed || [],
         editedFiles: result.editedFiles || [],
         currentIntent: null,
+        currentIntentTimestamp: null,
         gitBranchRefresh: 0,
       };
 
@@ -1384,6 +1394,7 @@ const App: React.FC = () => {
           alwaysAllowed: [],
           editedFiles: [],
           currentIntent: null,
+          currentIntentTimestamp: null,
           gitBranchRefresh: 0,
         };
         setTabs((prev) => [...prev, newTab]);
@@ -1416,6 +1427,7 @@ const App: React.FC = () => {
             alwaysAllowed: [],
             editedFiles: [],
             currentIntent: null,
+            currentIntentTimestamp: null,
             gitBranchRefresh: 0,
           },
         ];
@@ -1810,13 +1822,24 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {(activeTab?.messages || [])
-              .filter((m) => m.role !== "system")
-              .filter((m) => m.role === "user" || m.content.trim())
-              .map((message) => (
+            {(() => {
+              const filteredMessages = (activeTab?.messages || [])
+                .filter((m) => m.role !== "system")
+                .filter((m) => m.role === "user" || m.content.trim());
+              
+              // Find the last assistant message index
+              let lastAssistantIndex = -1;
+              for (let i = filteredMessages.length - 1; i >= 0; i--) {
+                if (filteredMessages[i].role === "assistant") {
+                  lastAssistantIndex = i;
+                  break;
+                }
+              }
+              
+              return filteredMessages.map((message, index) => (
                 <div
                   key={message.id}
-                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                  className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`}
                 >
                   <div
                     className={`max-w-[85%] rounded-lg px-4 py-2.5 overflow-hidden ${
@@ -1916,13 +1939,20 @@ const App: React.FC = () => {
                       )}
                     </div>
                   </div>
+                  {/* Show timestamp for the last assistant message */}
+                  {index === lastAssistantIndex && message.timestamp && (
+                    <span className="text-[10px] text-copilot-text-muted mt-1 ml-1">
+                      {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
                 </div>
-              ))}
+              ));
+            })()}
 
             {/* Thinking indicator when processing but no streaming content yet */}
             {activeTab?.isProcessing &&
               !activeTab?.messages.some((m) => m.isStreaming && m.content) && (
-                <div className="flex justify-start">
+                <div className="flex flex-col items-start">
                   <div className="bg-copilot-surface text-copilot-text rounded-lg px-4 py-2.5">
                     <div className="flex items-center gap-2 text-sm">
                       <Spinner size="sm" />
@@ -1931,6 +1961,15 @@ const App: React.FC = () => {
                       </span>
                     </div>
                   </div>
+                  {(() => {
+                    // Show intent timestamp if available, otherwise fall back to streaming message timestamp
+                    const timestamp = activeTab?.currentIntentTimestamp || activeTab?.messages.find((m) => m.isStreaming)?.timestamp;
+                    return timestamp ? (
+                      <span className="text-[10px] text-copilot-text-muted mt-1 ml-1">
+                        {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
               )}
 
