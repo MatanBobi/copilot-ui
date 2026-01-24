@@ -51,6 +51,7 @@ import {
   setTabCounter,
 } from "./utils/session";
 import { playNotificationSound } from "./utils/sound";
+import buildInfo from "./build-info.json";
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<Status>("connecting");
@@ -1809,6 +1810,15 @@ Start by exploring the codebase to understand the current implementation, then m
               )}
             </div>
           )}
+
+          {/* Build Info */}
+          <div className="border-t border-copilot-border px-3 py-2 text-[10px] text-copilot-text-muted">
+            <div className="flex items-center gap-1" title={`Build: ${buildInfo.version}\nBranch: ${buildInfo.gitBranch}\nCommit: ${buildInfo.gitSha}\nBuilt: ${buildInfo.buildDate} ${buildInfo.buildTime}`}>
+              <span className="opacity-60">v{buildInfo.baseVersion}</span>
+              <span className="opacity-40">•</span>
+              <span className="opacity-60 truncate">{buildInfo.gitBranch === 'main' ? buildInfo.gitSha : buildInfo.gitBranch}</span>
+            </div>
+          </div>
         </div>
 
         {/* Main Content Area */}
