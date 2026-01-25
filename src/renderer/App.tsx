@@ -53,6 +53,7 @@ import {
   setTabCounter,
 } from "./utils/session";
 import { playNotificationSound } from "./utils/sound";
+import { useClickOutside } from "./hooks";
 import buildInfo from "./build-info.json";
 
 const App: React.FC = () => {
@@ -65,8 +66,10 @@ const App: React.FC = () => {
     [],
   );
   const [showPreviousSessions, setShowPreviousSessions] = useState(false);
-  const [showAlwaysAllowed, setShowAlwaysAllowed] = useState(false);
-  const [showAddCommand, setShowAddCommand] = useState(false);
+  const [showAllowedCommands, setShowAllowedCommands] = useState(false);
+  const [globalSafeCommands, setGlobalSafeCommands] = useState<string[]>([]);
+  const [showAddAllowedCommand, setShowAddAllowedCommand] = useState(false);
+  const [addCommandScope, setAddCommandScope] = useState<"session" | "global">("session");
   const [addCommandValue, setAddCommandValue] = useState("");
   const [showEditedFiles, setShowEditedFiles] = useState(true);
   const [showCommitModal, setShowCommitModal] = useState(false);
@@ -79,6 +82,15 @@ const App: React.FC = () => {
   const [mainAheadInfo, setMainAheadInfo] = useState<{ isAhead: boolean; commits: string[]; targetBranch?: string } | null>(null);
   const [isMergingMain, setIsMergingMain] = useState(false);
   const [conflictedFiles, setConflictedFiles] = useState<string[]>([]);
+  const [allowMode, setAllowMode] = useState<"once" | "session" | "global">("once");
+  const [showAllowDropdown, setShowAllowDropdown] = useState(false);
+  const allowDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close allow dropdown when clicking outside
+  const closeAllowDropdown = useCallback(() => {
+    setShowAllowDropdown(false);
+  }, []);
+  useClickOutside(allowDropdownRef, closeAllowDropdown, showAllowDropdown);
 
   // Theme context
   const {
@@ -262,6 +274,14 @@ const App: React.FC = () => {
         setStatus("connected");
         setAvailableModels(data.models);
         setPreviousSessions(data.previousSessions);
+
+        // Load global safe commands
+        try {
+          const globalCommands = await window.electronAPI.copilot.getGlobalSafeCommands();
+          setGlobalSafeCommands(globalCommands);
+        } catch (error) {
+          console.error("Failed to load global safe commands:", error);
+        }
 
         // If no sessions exist, we need to create one (with trust check)
         if (data.sessions.length === 0) {
@@ -831,7 +851,7 @@ const App: React.FC = () => {
   );
 
   const handleConfirmation = async (
-    decision: "approved" | "always" | "denied",
+    decision: "approved" | "always" | "global" | "denied",
   ) => {
     // Get the first pending confirmation from the queue
     const pendingConfirmation = activeTab?.pendingConfirmations?.[0];
@@ -845,6 +865,16 @@ const App: React.FC = () => {
 
       // Remove this confirmation from the queue
       const remainingConfirmations = activeTab.pendingConfirmations.slice(1);
+
+      // If "global" was selected, update the global safe commands list
+      if (decision === "global" && pendingConfirmation.executable) {
+        const newExecutables = pendingConfirmation.executable
+          .split(", ")
+          .filter((e) => e.trim());
+        setGlobalSafeCommands(prev => [...new Set([...prev, ...newExecutables])]);
+        updateTab(activeTab.id, { pendingConfirmations: remainingConfirmations });
+        return;
+      }
 
       // If "always" was selected, update the local alwaysAllowed list
       if (decision === "always" && pendingConfirmation.executable) {
@@ -906,9 +936,50 @@ const App: React.FC = () => {
         alwaysAllowed: [...activeTab.alwaysAllowed, addCommandValue.trim()],
       });
       setAddCommandValue("");
-      setShowAddCommand(false);
+      setShowAddAllowedCommand(false);
     } catch (error) {
       console.error("Failed to add always-allowed:", error);
+    }
+  };
+
+  // Global safe commands handlers
+  const refreshGlobalSafeCommands = async () => {
+    try {
+      const list = await window.electronAPI.copilot.getGlobalSafeCommands();
+      setGlobalSafeCommands(list);
+    } catch (error) {
+      console.error("Failed to fetch global safe commands:", error);
+    }
+  };
+
+  const handleAddGlobalSafeCommand = async () => {
+    if (!addCommandValue.trim()) return;
+    try {
+      await window.electronAPI.copilot.addGlobalSafeCommand(
+        addCommandValue.trim(),
+      );
+      setGlobalSafeCommands(prev => [...prev, addCommandValue.trim()]);
+      setAddCommandValue("");
+      setShowAddAllowedCommand(false);
+    } catch (error) {
+      console.error("Failed to add global safe command:", error);
+    }
+  };
+
+  const handleAddAllowedCommand = async () => {
+    if (addCommandScope === "global") {
+      await handleAddGlobalSafeCommand();
+    } else {
+      await handleAddAlwaysAllowed();
+    }
+  };
+
+  const handleRemoveGlobalSafeCommand = async (command: string) => {
+    try {
+      await window.electronAPI.copilot.removeGlobalSafeCommand(command);
+      setGlobalSafeCommands(prev => prev.filter(c => c !== command));
+    } catch (error) {
+      console.error("Failed to remove global safe command:", error);
     }
   };
 
@@ -2256,18 +2327,69 @@ Start by exploring the codebase to understand the current implementation, then m
                       </>
                     ) : (
                       <>
-                        <button
-                          onClick={() => handleConfirmation("approved")}
-                          className="px-4 py-2 rounded bg-copilot-success hover:brightness-110 text-copilot-text-inverse text-sm font-medium transition-colors"
-                        >
-                          Once
-                        </button>
-                        <button
-                          onClick={() => handleConfirmation("always")}
-                          className="px-4 py-2 rounded bg-copilot-surface hover:bg-copilot-surface-hover text-copilot-text text-sm font-medium border border-copilot-border transition-colors"
-                        >
-                          Always
-                        </button>
+                        {/* Split button: Allow with dropdown for mode selection */}
+                        <div className="relative flex" ref={allowDropdownRef}>
+                          <button
+                            onClick={() => {
+                              if (allowMode === "once") {
+                                handleConfirmation("approved");
+                              } else if (allowMode === "session") {
+                                handleConfirmation("always");
+                              } else {
+                                handleConfirmation("global");
+                              }
+                            }}
+                            className="px-4 py-2 rounded-l bg-copilot-success hover:brightness-110 text-copilot-text-inverse text-sm font-medium transition-colors"
+                          >
+                            Allow
+                          </button>
+                          <button
+                            onClick={() => setShowAllowDropdown(!showAllowDropdown)}
+                            className="px-1.5 py-2 rounded-r bg-copilot-success hover:brightness-110 text-copilot-text-inverse text-sm font-medium transition-colors border-l border-copilot-text-inverse/20"
+                            title="Choose approval scope"
+                          >
+                            <ChevronDownIcon size={14} />
+                          </button>
+                          {showAllowDropdown && (
+                            <div className="absolute top-full left-0 mt-1 py-1 bg-copilot-surface border border-copilot-border rounded-lg shadow-lg z-50 min-w-[140px]">
+                              <button
+                                onClick={() => {
+                                  setAllowMode("once");
+                                  setShowAllowDropdown(false);
+                                }}
+                                className={`w-full px-3 py-1.5 text-left text-xs hover:bg-copilot-surface-hover transition-colors ${
+                                  allowMode === "once" ? "text-copilot-accent" : "text-copilot-text"
+                                }`}
+                              >
+                                {allowMode === "once" && "✓ "}Once
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setAllowMode("session");
+                                  setShowAllowDropdown(false);
+                                }}
+                                className={`w-full px-3 py-1.5 text-left text-xs hover:bg-copilot-surface-hover transition-colors ${
+                                  allowMode === "session" ? "text-copilot-accent" : "text-copilot-text"
+                                }`}
+                                title="Always allow for this session"
+                              >
+                                {allowMode === "session" && "✓ "}Session
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setAllowMode("global");
+                                  setShowAllowDropdown(false);
+                                }}
+                                className={`w-full px-3 py-1.5 text-left text-xs hover:bg-copilot-surface-hover transition-colors ${
+                                  allowMode === "global" ? "text-copilot-accent" : "text-copilot-text"
+                                }`}
+                                title="Always allow globally (persists across sessions)"
+                              >
+                                {allowMode === "global" && "✓ "}Global
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         <button
                           onClick={() => handleConfirmation("denied")}
                           className="px-4 py-2 rounded bg-copilot-surface hover:bg-copilot-surface-hover text-copilot-error text-sm font-medium border border-copilot-border transition-colors"
@@ -2739,53 +2861,66 @@ Start by exploring the codebase to understand the current implementation, then m
                 )}
               </div>
 
-              {/* Always Allowed */}
+              {/* Allowed Commands (merged session + global) */}
               <div className="border-b border-copilot-border">
                 <div className="flex items-center">
                   <button
                     onClick={() => {
-                      setShowAlwaysAllowed(!showAlwaysAllowed);
-                      if (!showAlwaysAllowed) refreshAlwaysAllowed();
+                      setShowAllowedCommands(!showAllowedCommands);
+                      if (!showAllowedCommands) {
+                        refreshAlwaysAllowed();
+                        refreshGlobalSafeCommands();
+                      }
                     }}
                     className="flex-1 flex items-center gap-2 px-3 py-2 text-xs text-copilot-text-muted hover:text-copilot-text hover:bg-copilot-surface transition-colors"
                   >
                     <ChevronRightIcon
                       size={8}
-                      className={`transition-transform ${showAlwaysAllowed ? "rotate-90" : ""}`}
+                      className={`transition-transform ${showAllowedCommands ? "rotate-90" : ""}`}
                     />
-                    <span>Always Allowed</span>
-                    {(activeTab?.alwaysAllowed.length || 0) > 0 && (
+                    <span>Allowed Commands</span>
+                    {((activeTab?.alwaysAllowed.length || 0) + globalSafeCommands.length) > 0 && (
                       <span className="text-copilot-accent">
-                        ({activeTab?.alwaysAllowed.length})
+                        ({(activeTab?.alwaysAllowed.length || 0) + globalSafeCommands.length})
                       </span>
                     )}
                   </button>
-                  <IconButton
-                    icon={<PlusIcon size={12} />}
-                    onClick={() => {
-                      setShowAddCommand(!showAddCommand);
-                      if (!showAlwaysAllowed) {
-                        setShowAlwaysAllowed(true);
-                        refreshAlwaysAllowed();
-                      }
-                    }}
-                    variant="success"
-                    size="sm"
-                    title="Add allowed command"
-                    className="mr-1"
-                  />
+                  <div className="relative mr-1">
+                    <IconButton
+                      icon={<PlusIcon size={12} />}
+                      onClick={() => {
+                        setShowAddAllowedCommand(!showAddAllowedCommand);
+                        if (!showAllowedCommands) {
+                          setShowAllowedCommands(true);
+                          refreshAlwaysAllowed();
+                          refreshGlobalSafeCommands();
+                        }
+                      }}
+                      variant="success"
+                      size="sm"
+                      title="Add allowed command"
+                    />
+                  </div>
                 </div>
-                {showAddCommand && activeTab && (
+                {showAddAllowedCommand && activeTab && (
                   <div className="px-3 pb-2">
                     <div className="flex items-center gap-2">
+                      <select
+                        value={addCommandScope}
+                        onChange={(e) => setAddCommandScope(e.target.value as "session" | "global")}
+                        className="px-2 py-1 text-[10px] bg-copilot-surface border border-copilot-border rounded text-copilot-text focus:outline-none focus:border-copilot-accent"
+                      >
+                        <option value="session">Session</option>
+                        <option value="global">Global</option>
+                      </select>
                       <input
                         type="text"
                         value={addCommandValue}
                         onChange={(e) => setAddCommandValue(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") handleAddAlwaysAllowed();
+                          if (e.key === "Enter") handleAddAllowedCommand();
                           if (e.key === "Escape") {
-                            setShowAddCommand(false);
+                            setShowAddAllowedCommand(false);
                             setAddCommandValue("");
                           }
                         }}
@@ -2794,7 +2929,7 @@ Start by exploring the codebase to understand the current implementation, then m
                         autoFocus
                       />
                       <button
-                        onClick={handleAddAlwaysAllowed}
+                        onClick={handleAddAllowedCommand}
                         disabled={!addCommandValue.trim()}
                         className="px-2 py-1 text-[10px] bg-copilot-accent text-copilot-text rounded hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -2803,11 +2938,11 @@ Start by exploring the codebase to understand the current implementation, then m
                     </div>
                   </div>
                 )}
-                {showAlwaysAllowed && activeTab && (
-                  <div className="max-h-32 overflow-y-auto">
-                    {activeTab.alwaysAllowed.length === 0 ? (
+                {showAllowedCommands && activeTab && (
+                  <div className="max-h-48 overflow-y-auto">
+                    {(activeTab.alwaysAllowed.length === 0 && globalSafeCommands.length === 0) ? (
                       <div className="px-3 py-2 text-[10px] text-copilot-text-muted">
-                        No always-allowed
+                        No allowed commands
                       </div>
                     ) : (
                       (() => {
@@ -2843,68 +2978,58 @@ Start by exploring the codebase to understand the current implementation, then m
                             : exe;
                         };
 
-                        const list = [...activeTab.alwaysAllowed].sort(
-                          (a, b) => {
-                            const ra = isSpecialExe(a) ? 0 : 1;
-                            const rb = isSpecialExe(b) ? 0 : 1;
-                            if (ra !== rb) return ra - rb;
-                            return toPretty(a).localeCompare(toPretty(b));
-                          },
-                        );
+                        // Combine session and global commands with type indicator
+                        type AllowedCommand = { cmd: string; isGlobal: boolean; isSpecial: boolean; pretty: string };
+                        const allCommands: AllowedCommand[] = [
+                          ...activeTab.alwaysAllowed.map(cmd => ({
+                            cmd,
+                            isGlobal: false,
+                            isSpecial: isSpecialExe(cmd),
+                            pretty: toPretty(cmd),
+                          })),
+                          ...globalSafeCommands.map(cmd => ({
+                            cmd,
+                            isGlobal: true,
+                            isSpecial: false,
+                            pretty: cmd,
+                          })),
+                        ].sort((a, b) => {
+                          // Global commands first, then special, then alphabetically
+                          if (a.isGlobal !== b.isGlobal) return a.isGlobal ? -1 : 1;
+                          if (a.isSpecial !== b.isSpecial) return a.isSpecial ? -1 : 1;
+                          return a.pretty.localeCompare(b.pretty);
+                        });
 
                         return (
-                          <div className="px-3 pb-2 flex flex-wrap gap-2">
-                            {list.map((exe) => {
-                              const hasColon = exe.includes(":");
-                              const [rawPrefix, rawRest] = hasColon
-                                ? exe.split(":", 2)
-                                : [exe, null];
-                              const prefix = rawPrefix;
-                              const rest = rawRest;
-
-                              const isSpecial =
-                                prefix === "write" ||
-                                prefix === "url" ||
-                                prefix === "mcp";
-                              const meaning =
-                                prefix === "write"
-                                  ? "File changes"
-                                  : prefix === "url"
-                                    ? "Web access"
-                                    : prefix === "mcp"
-                                      ? "MCP tools"
-                                      : "";
-                              const pretty = isSpecial
-                                ? rest
-                                  ? `${meaning}: ${rest}`
-                                  : meaning
-                                : exe;
-
-                              return (
-                                <div
-                                  key={exe}
-                                  className={`flex items-center gap-2 rounded border px-2 py-1 text-[10px] font-mono ${
-                                    isSpecial
-                                      ? "bg-copilot-surface-hover border-copilot-border text-copilot-accent"
-                                      : "bg-copilot-surface-hover border-copilot-border text-copilot-text-muted"
-                                  }`}
-                                  title={pretty}
+                          <div className="pb-1">
+                            {allCommands.map(({ cmd, isGlobal, isSpecial, pretty }) => (
+                              <div
+                                key={`${isGlobal ? 'global' : 'session'}-${cmd}`}
+                                className="flex items-center gap-2 px-3 py-1 text-[10px] hover:bg-copilot-surface-hover transition-colors"
+                              >
+                                {isGlobal && (
+                                  <GlobeIcon size={10} className="shrink-0 text-copilot-accent" />
+                                )}
+                                <span className={`flex-1 truncate font-mono ${
+                                  isSpecial
+                                    ? "text-copilot-accent"
+                                    : "text-copilot-text-muted"
+                                }`} title={pretty}>
+                                  {pretty}
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    isGlobal
+                                      ? handleRemoveGlobalSafeCommand(cmd)
+                                      : handleRemoveAlwaysAllowed(cmd)
+                                  }
+                                  className="shrink-0 text-copilot-error hover:brightness-110"
+                                  title="Remove"
                                 >
-                                  <span className="truncate max-w-[180px]">
-                                    {pretty}
-                                  </span>
-                                  <button
-                                    onClick={() =>
-                                      handleRemoveAlwaysAllowed(exe)
-                                    }
-                                    className="shrink-0 text-copilot-error hover:brightness-110"
-                                    title="Remove"
-                                  >
-                                    <CloseIcon size={10} />
-                                  </button>
-                                </div>
-                              );
-                            })}
+                                  <CloseIcon size={10} />
+                                </button>
+                              </div>
+                            ))}
                           </div>
                         );
                       })()

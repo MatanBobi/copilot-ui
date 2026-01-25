@@ -94,7 +94,7 @@ const electronAPI = {
       ipcRenderer.on('copilot:permission', handler)
       return () => ipcRenderer.removeListener('copilot:permission', handler)
     },
-    respondPermission: (data: { requestId: string; decision: 'approved' | 'always' | 'denied' }): Promise<{ success: boolean }> => {
+    respondPermission: (data: { requestId: string; decision: 'approved' | 'always' | 'global' | 'denied' }): Promise<{ success: boolean }> => {
       return ipcRenderer.invoke('copilot:permissionResponse', data)
     },
     getAlwaysAllowed: (sessionId: string): Promise<string[]> => {
@@ -105,6 +105,15 @@ const electronAPI = {
     },
     addAlwaysAllowed: (sessionId: string, command: string): Promise<{ success: boolean }> => {
       return ipcRenderer.invoke('copilot:addAlwaysAllowed', { sessionId, command })
+    },
+    getGlobalSafeCommands: (): Promise<string[]> => {
+      return ipcRenderer.invoke('copilot:getGlobalSafeCommands')
+    },
+    addGlobalSafeCommand: (command: string): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('copilot:addGlobalSafeCommand', command)
+    },
+    removeGlobalSafeCommand: (command: string): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('copilot:removeGlobalSafeCommand', command)
     },
     onError: (callback: (data: { sessionId: string; message: string }) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; message: string }): void => callback(data)

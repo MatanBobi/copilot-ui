@@ -111,7 +111,8 @@ const store = new Store({
     openSessions: [] as StoredSession[],  // Sessions that were open in our app with their models and cwd
     trustedDirectories: [] as string[],  // Directories that are always trusted
     theme: 'system' as string,  // Theme preference: 'system', 'light', 'dark', or custom theme id
-    sessionCwds: {} as Record<string, string>  // Persistent map of sessionId -> cwd (survives session close)
+    sessionCwds: {} as Record<string, string>,  // Persistent map of sessionId -> cwd (survives session close)
+    globalSafeCommands: [] as string[]  // Globally safe commands that are auto-approved for all sessions
   }
 })
 
@@ -572,6 +573,7 @@ async function handlePermissionRequest(
   const requestId = request.toolCallId || `perm-${Date.now()}`
   const req = request as Record<string, unknown>
   const sessionState = sessions.get(ourSessionId)
+  const globalSafeCommands = new Set(store.get('globalSafeCommands') as string[] || [])
   
   console.log(`[${ourSessionId}] Permission request:`, request.kind)
   
@@ -579,9 +581,10 @@ async function handlePermissionRequest(
   if (request.kind === 'shell' && req.fullCommandText) {
     const executables = extractExecutables(req.fullCommandText as string)
     
-    // Filter to only unapproved executables (exclude globally-auto-approved commands)
+    // Filter to only unapproved executables (exclude globally-auto-approved commands and global safe commands)
     const unapproved = executables.filter(exec =>
       !GLOBAL_AUTO_APPROVED_SHELL_EXECUTABLES.has(exec) &&
+      !globalSafeCommands.has(exec) &&
       !sessionState?.alwaysAllowed.has(exec)
     )
     
@@ -621,6 +624,12 @@ async function handlePermissionRequest(
   // Auto-approve global low-risk commands (do not persist/show in UI)
   if (request.kind === 'shell' && GLOBAL_AUTO_APPROVED_SHELL_EXECUTABLES.has(executable)) {
     console.log(`[${ourSessionId}] Auto-approved (global allowlist):`, executable)
+    return { kind: 'approved' }
+  }
+
+  // Check if in global safe commands
+  if (globalSafeCommands.has(executable)) {
+    console.log(`[${ourSessionId}] Auto-approved (global safe commands):`, executable)
     return { kind: 'approved' }
   }
 
@@ -1179,7 +1188,7 @@ ipcMain.handle('git:generateCommitMessage', async (_event, data: { diff: string 
 // Handle permission response from renderer
 ipcMain.handle('copilot:permissionResponse', async (_event, data: { 
   requestId: string
-  decision: 'approved' | 'always' | 'denied' 
+  decision: 'approved' | 'always' | 'global' | 'denied' 
 }) => {
   const pending = pendingPermissions.get(data.requestId)
   if (!pending) {
@@ -1188,6 +1197,16 @@ ipcMain.handle('copilot:permissionResponse', async (_event, data: {
   }
   
   pendingPermissions.delete(data.requestId)
+  
+  // Track "global" for adding to persistent global safe commands
+  if (data.decision === 'global') {
+    const executables = pending.executable.split(', ').filter(e => e.trim())
+    const globalSafeCommands = store.get('globalSafeCommands') as string[] || []
+    const newCommands = executables.map(exec => normalizeAlwaysAllowed(exec.trim()))
+    const updatedCommands = [...new Set([...globalSafeCommands, ...newCommands])]
+    store.set('globalSafeCommands', updatedCommands)
+    console.log(`[${pending.sessionId}] Added to global safe commands:`, newCommands)
+  }
   
   // Track "always allow" for this specific executable in the session
   if (data.decision === 'always') {
@@ -1203,7 +1222,7 @@ ipcMain.handle('copilot:permissionResponse', async (_event, data: {
   }
   
   // For out-of-scope reads that are approved, remember the parent directory
-  if ((data.decision === 'approved' || data.decision === 'always') && pending.outOfScopePath) {
+  if ((data.decision === 'approved' || data.decision === 'always' || data.decision === 'global') && pending.outOfScopePath) {
     const sessionState = sessions.get(pending.sessionId)
     if (sessionState) {
       const parentDir = dirname(pending.outOfScopePath)
@@ -1371,6 +1390,32 @@ ipcMain.handle('copilot:addAlwaysAllowed', async (_event, data: { sessionId: str
     sessionState.alwaysAllowed.add(normalized)
     console.log(`[${data.sessionId}] Manually added to always allow:`, normalized)
   }
+  return { success: true }
+})
+
+// Get global safe commands
+ipcMain.handle('copilot:getGlobalSafeCommands', async () => {
+  return store.get('globalSafeCommands') as string[] || []
+})
+
+// Add a command to global safe commands
+ipcMain.handle('copilot:addGlobalSafeCommand', async (_event, command: string) => {
+  const globalSafeCommands = store.get('globalSafeCommands') as string[] || []
+  const normalized = normalizeAlwaysAllowed(command.trim())
+  if (!globalSafeCommands.includes(normalized)) {
+    globalSafeCommands.push(normalized)
+    store.set('globalSafeCommands', globalSafeCommands)
+    console.log('Added to global safe commands:', normalized)
+  }
+  return { success: true }
+})
+
+// Remove a command from global safe commands
+ipcMain.handle('copilot:removeGlobalSafeCommand', async (_event, command: string) => {
+  const globalSafeCommands = store.get('globalSafeCommands') as string[] || []
+  const updated = globalSafeCommands.filter(c => c !== command)
+  store.set('globalSafeCommands', updated)
+  console.log('Removed from global safe commands:', command)
   return { success: true }
 })
 
