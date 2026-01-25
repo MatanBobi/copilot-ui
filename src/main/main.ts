@@ -462,12 +462,17 @@ async function verifyAvailableModels(client: CopilotClient): Promise<ModelInfo[]
       const session = await client.createSession({ model: model.id })
       // If successful, model is available - clean up immediately
       await session.destroy()
-      await client.deleteSession(session.sessionId)
+      // Try to delete session file, but don't fail if it doesn't exist
+      try {
+        await client.deleteSession(session.sessionId)
+      } catch {
+        // Session may already be deleted by destroy(), ignore
+      }
       verified.push(model)
       console.log(`✓ Model verified: ${model.id}`)
     } catch (error) {
       // Model not available for this user
-      console.log(`✗ Model unavailable: ${model.id}`)
+      console.log(`✗ Model unavailable: ${model.id}`, error instanceof Error ? error.message : error)
     }
   }
   
