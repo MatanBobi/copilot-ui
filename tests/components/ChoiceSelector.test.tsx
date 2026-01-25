@@ -28,10 +28,10 @@ describe('ChoiceSelector Component', () => {
     expect(screen.getByText('Merge')).toBeInTheDocument()
   })
 
-  it('displays choice descriptions', () => {
+  it('displays choice descriptions as tooltips', () => {
     render(<ChoiceSelector choices={mockChoices} onSelect={() => {}} />)
-    expect(screen.getByText('keeps history clean')).toBeInTheDocument()
-    expect(screen.getByText('creates a merge commit')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Rebase/i })).toHaveAttribute('title', 'keeps history clean')
+    expect(screen.getByRole('button', { name: /Merge/i })).toHaveAttribute('title', 'creates a merge commit')
   })
 
   it('calls onSelect with choice when clicked', async () => {

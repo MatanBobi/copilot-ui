@@ -15,21 +15,16 @@ export const ChoiceSelector: React.FC<ChoiceSelectorProps> = ({
   if (!choices || choices.length === 0) return null
 
   return (
-    <div className="flex flex-wrap gap-2 mt-2">
+    <div className="flex flex-wrap gap-1.5 mt-2">
       {choices.map((choice) => (
         <button
           key={choice.id}
           onClick={() => onSelect(choice)}
           disabled={disabled}
-          className="px-3 py-1.5 text-xs bg-copilot-accent/10 hover:bg-copilot-accent/20 text-copilot-accent border border-copilot-accent/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex flex-col items-start"
+          className="group px-2.5 py-1 text-xs bg-copilot-surface hover:bg-copilot-surface-hover text-copilot-text border border-copilot-border hover:border-copilot-accent/50 rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           title={choice.description}
         >
-          <span className="font-medium">{choice.label}</span>
-          {choice.description && (
-            <span className="text-[10px] text-copilot-text-muted mt-0.5">
-              {choice.description}
-            </span>
-          )}
+          <span className="group-hover:text-copilot-accent transition-colors">{choice.label}</span>
         </button>
       ))}
     </div>
