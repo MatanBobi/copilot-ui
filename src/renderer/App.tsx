@@ -78,6 +78,7 @@ const App: React.FC = () => {
   const [pendingMergeInfo, setPendingMergeInfo] = useState<{ incomingFiles: string[] } | null>(null);
   const [mainAheadInfo, setMainAheadInfo] = useState<{ isAhead: boolean; commits: string[]; targetBranch?: string } | null>(null);
   const [isMergingMain, setIsMergingMain] = useState(false);
+  const [conflictedFiles, setConflictedFiles] = useState<string[]>([]);
 
   // Theme context
   const {
@@ -2655,21 +2656,25 @@ Start by exploring the codebase to understand the current implementation, then m
                         No files edited
                       </div>
                     ) : (
-                      activeTab.editedFiles.map((filePath) => (
-                        <div
-                          key={filePath}
-                          className="flex items-center gap-2 px-3 py-1 text-[10px] text-copilot-text-muted hover:bg-copilot-surface"
-                          title={filePath}
-                        >
-                          <FileIcon
-                            size={8}
-                            className="shrink-0 text-copilot-success"
-                          />
-                          <span className="truncate font-mono">
-                            {filePath.split("/").pop()}
-                          </span>
-                        </div>
-                      ))
+                      activeTab.editedFiles.map((filePath) => {
+                        const isConflicted = conflictedFiles.some(cf => filePath.endsWith(cf) || cf.endsWith(filePath.split('/').pop() || ''));
+                        return (
+                          <div
+                            key={filePath}
+                            className={`flex items-center gap-2 px-3 py-1 text-[10px] hover:bg-copilot-surface ${isConflicted ? 'text-copilot-error' : 'text-copilot-text-muted'}`}
+                            title={isConflicted ? `${filePath} (conflict)` : filePath}
+                          >
+                            <FileIcon
+                              size={8}
+                              className={`shrink-0 ${isConflicted ? 'text-copilot-error' : 'text-copilot-success'}`}
+                            />
+                            <span className="truncate font-mono">
+                              {filePath.split("/").pop()}
+                            </span>
+                            {isConflicted && <span className="text-[8px] text-copilot-error">!</span>}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 )}
@@ -2949,7 +2954,7 @@ Start by exploring the codebase to understand the current implementation, then m
       {/* Commit Modal */}
       <Modal
         isOpen={showCommitModal && !!activeTab}
-        onClose={() => { setShowCommitModal(false); setMainAheadInfo(null); }}
+        onClose={() => { setShowCommitModal(false); setMainAheadInfo(null); setConflictedFiles([]); }}
         title="Commit & Push Changes"
       >
         <Modal.Body>
@@ -2995,6 +3000,16 @@ Start by exploring the codebase to understand the current implementation, then m
                             if (!result.success) {
                               setCommitError(result.error || 'Failed to merge');
                               return;
+                            }
+                            // Show warning if stash pop had issues
+                            if (result.warning) {
+                              setCommitError(result.warning);
+                            }
+                            // Set conflicted files if any
+                            if (result.conflictedFiles && result.conflictedFiles.length > 0) {
+                              setConflictedFiles(result.conflictedFiles);
+                            } else {
+                              setConflictedFiles([]);
                             }
                             // Refresh the changed files list
                             const changedResult = await window.electronAPI.git.getChangedFiles(

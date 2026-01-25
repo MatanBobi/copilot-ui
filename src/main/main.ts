@@ -1626,6 +1626,19 @@ ipcMain.handle('git:checkMainAhead', async (_event, cwd: string) => {
 // Git operations - merge origin/main into current branch
 ipcMain.handle('git:mergeMainIntoBranch', async (_event, cwd: string) => {
   try {
+    // Check for uncommitted changes
+    const { stdout: statusOutput } = await execAsync('git status --porcelain', { cwd })
+    const hasUncommittedChanges = statusOutput.trim().length > 0
+
+    // Stash changes if needed
+    if (hasUncommittedChanges) {
+      try {
+        await execAsync('git stash push -m "Auto-stash before merging main"', { cwd })
+      } catch (stashError) {
+        return { success: false, error: `Failed to stash changes: ${String(stashError)}` }
+      }
+    }
+
     // Determine target branch (main or master)
     let targetBranch = 'main'
     try {
@@ -1635,6 +1648,10 @@ ipcMain.handle('git:mergeMainIntoBranch', async (_event, cwd: string) => {
         await execAsync('git rev-parse --verify origin/master', { cwd })
         targetBranch = 'master'
       } catch {
+        // Pop stash before returning error
+        if (hasUncommittedChanges) {
+          try { await execAsync('git stash pop', { cwd }) } catch { /* ignore */ }
+        }
         return { success: false, error: 'Neither origin/main nor origin/master exists' }
       }
     }
@@ -1651,10 +1668,39 @@ ipcMain.handle('git:mergeMainIntoBranch', async (_event, cwd: string) => {
       await execAsync(`git merge origin/${targetBranch}`, { cwd })
     } catch (mergeError) {
       const errorMsg = String(mergeError)
+      // Pop stash before returning error
+      if (hasUncommittedChanges) {
+        try { await execAsync('git stash pop', { cwd }) } catch { /* ignore */ }
+      }
       if (errorMsg.includes('CONFLICT')) {
         return { success: false, error: `Merge conflicts detected. Please resolve them manually.` }
       }
       return { success: false, error: `Failed to merge origin/${targetBranch}: ${errorMsg}` }
+    }
+
+    // Pop the stash to restore changes
+    if (hasUncommittedChanges) {
+      try {
+        await execAsync('git stash pop', { cwd })
+      } catch (popError) {
+        const errorMsg = String(popError)
+        if (errorMsg.includes('CONFLICT')) {
+          // Get the list of conflicted files
+          let conflictedFiles: string[] = []
+          try {
+            const { stdout: statusOutput } = await execAsync('git status --porcelain', { cwd })
+            conflictedFiles = statusOutput
+              .split('\n')
+              .filter(line => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD') || line.startsWith('AU') || line.startsWith('UA') || line.startsWith('DU') || line.startsWith('UD'))
+              .map(line => line.slice(3).trim())
+          } catch {
+            // Ignore status errors
+          }
+          return { success: true, targetBranch, warning: 'Merged successfully, but conflicts occurred when restoring your changes. Please resolve them.', conflictedFiles }
+        }
+        // If pop failed for other reasons, try to recover
+        return { success: true, targetBranch, warning: 'Merged successfully, but failed to restore stashed changes. Run "git stash pop" manually.' }
+      }
     }
 
     return { success: true, targetBranch }
