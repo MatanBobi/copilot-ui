@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+// Create hoisted mock functions using vi.hoisted
+const mocks = vi.hoisted(() => ({
+  existsSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  rmSync: vi.fn(),
+  statSync: vi.fn(),
+  readdirSync: vi.fn()
+}))
+
 // Mock electron app
 vi.mock('electron', () => ({
   app: {
@@ -8,33 +19,43 @@ vi.mock('electron', () => ({
       if (type === 'userData') return '/tmp/test-userdata'
       return '/tmp'
     })
+  },
+  net: {
+    request: vi.fn()
   }
 }))
 
-// Mock fs with default export
+// Mock fs with hoisted mocks
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>()
   return {
     ...actual,
-    default: actual,
-    existsSync: vi.fn(),
-    mkdirSync: vi.fn(),
-    readFileSync: vi.fn(),
-    writeFileSync: vi.fn(),
-    rmSync: vi.fn(),
-    statSync: vi.fn(),
-    readdirSync: vi.fn()
+    default: {
+      ...actual,
+      existsSync: mocks.existsSync,
+      mkdirSync: mocks.mkdirSync,
+      readFileSync: mocks.readFileSync,
+      writeFileSync: mocks.writeFileSync,
+      rmSync: mocks.rmSync,
+      statSync: mocks.statSync,
+      readdirSync: mocks.readdirSync
+    },
+    existsSync: mocks.existsSync,
+    mkdirSync: mocks.mkdirSync,
+    readFileSync: mocks.readFileSync,
+    writeFileSync: mocks.writeFileSync,
+    rmSync: mocks.rmSync,
+    statSync: mocks.statSync,
+    readdirSync: mocks.readdirSync
   }
 })
 
-// Import mocked fs
-import { existsSync, readFileSync } from 'fs'
+// Import module under test after mocks are set up
+import { loadConfig, listWorktreeSessions } from './worktree'
 
 describe('worktree module', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset module cache so fresh import uses updated mocks
-    vi.resetModules()
   })
 
   describe('generateSessionId', () => {
@@ -54,25 +75,23 @@ describe('worktree module', () => {
   })
 
   describe('loadConfig', () => {
-    it('should return default config when no config file exists', async () => {
-      vi.mocked(existsSync).mockReturnValue(false)
+    it('should return default config when no config file exists', () => {
+      mocks.existsSync.mockReturnValue(false)
 
-      const { loadConfig } = await import('./worktree')
       const config = loadConfig()
       
       expect(config.pruneAfterDays).toBe(30)
       expect(config.warnDiskThresholdMB).toBe(1024)
     })
 
-    it('should merge config file with defaults', async () => {
-      vi.mocked(existsSync).mockReturnValue(true)
-      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({
+    it('should merge config file with defaults', () => {
+      mocks.existsSync.mockReturnValue(true)
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
         sessions: {
           pruneAfterDays: 7
         }
       }))
 
-      const { loadConfig } = await import('./worktree')
       const config = loadConfig()
       
       expect(config.pruneAfterDays).toBe(7)
@@ -81,24 +100,23 @@ describe('worktree module', () => {
   })
 
   describe('listWorktreeSessions', () => {
-    it('should return empty list when no sessions exist', async () => {
-      vi.mocked(existsSync).mockReturnValue(false)
+    it('should return empty list when no sessions exist', () => {
+      mocks.existsSync.mockReturnValue(false)
 
-      const { listWorktreeSessions } = await import('./worktree')
       const result = listWorktreeSessions()
       
       expect(result.sessions).toEqual([])
       expect(result.totalDiskUsage).toBe('0 B')
     })
 
-    it('should mark orphaned sessions correctly', async () => {
+    it('should mark orphaned sessions correctly', () => {
       // Registry exists but worktree directory doesn't
-      vi.mocked(existsSync).mockImplementation((path) => {
+      mocks.existsSync.mockImplementation((path) => {
         if (String(path).includes('sessions.json')) return true
         return false // Worktree directories don't exist
       })
       
-      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
         version: 1,
         sessions: [{
           id: 'test-repo--feature',
@@ -111,7 +129,6 @@ describe('worktree module', () => {
         }]
       }))
 
-      const { listWorktreeSessions } = await import('./worktree')
       const result = listWorktreeSessions()
       
       expect(result.sessions.length).toBe(1)
