@@ -110,6 +110,11 @@ const electronAPI = {
       const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; message: string }): void => callback(data)
       ipcRenderer.on('copilot:error', handler)
       return () => ipcRenderer.removeListener('copilot:error', handler)
+    },
+    onModelsVerified: (callback: (data: { models: { id: string; name: string; multiplier: number }[] }) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: { models: { id: string; name: string; multiplier: number }[] }): void => callback(data)
+      ipcRenderer.on('copilot:modelsVerified', handler)
+      return () => ipcRenderer.removeListener('copilot:modelsVerified', handler)
     }
   },
 

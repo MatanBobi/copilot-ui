@@ -378,6 +378,7 @@ interface ModelInfo {
 }
 
 // Static list of available models with pricing multipliers (sorted by cost low to high)
+// This serves as the baseline list; actual availability is verified per-user
 const AVAILABLE_MODELS: ModelInfo[] = [
   { id: 'gpt-4.1', name: 'GPT-4.1', multiplier: 0 },
   { id: 'gpt-5-mini', name: 'GPT-5 mini', multiplier: 0 },
@@ -394,6 +395,50 @@ const AVAILABLE_MODELS: ModelInfo[] = [
   { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro (Preview)', multiplier: 1 },
   { id: 'claude-opus-4.5', name: 'Claude Opus 4.5', multiplier: 3 },
 ]
+
+// Cache for verified models (models confirmed available for current user)
+interface VerifiedModelsCache {
+  models: ModelInfo[]
+  timestamp: number
+}
+let verifiedModelsCache: VerifiedModelsCache | null = null
+const MODEL_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
+
+// Returns verified models, using cache if valid
+function getVerifiedModels(): ModelInfo[] {
+  if (verifiedModelsCache && Date.now() - verifiedModelsCache.timestamp < MODEL_CACHE_TTL) {
+    return verifiedModelsCache.models
+  }
+  // If no cache, return baseline models (verification happens async)
+  return AVAILABLE_MODELS
+}
+
+// Verify which models are available for the current user by testing each one
+async function verifyAvailableModels(client: CopilotClient): Promise<ModelInfo[]> {
+  console.log('Starting model verification...')
+  const verified: ModelInfo[] = []
+  
+  for (const model of AVAILABLE_MODELS) {
+    try {
+      // Try to create a session with this model
+      const session = await client.createSession({ model: model.id })
+      // If successful, model is available - clean up immediately
+      await session.destroy()
+      await client.deleteSession(session.sessionId)
+      verified.push(model)
+      console.log(`✓ Model verified: ${model.id}`)
+    } catch (error) {
+      // Model not available for this user
+      console.log(`✗ Model unavailable: ${model.id}`)
+    }
+  }
+  
+  // Cache the results
+  verifiedModelsCache = { models: verified, timestamp: Date.now() }
+  console.log(`Model verification complete: ${verified.length}/${AVAILABLE_MODELS.length} models available`)
+  
+  return verified
+}
 
 // Preferred models for quick, simple AI tasks (in order of preference)
 // These are typically free/cheap models optimized for simple text generation
@@ -855,9 +900,19 @@ async function initCopilot(): Promise<void> {
       mainWindow.webContents.send('copilot:ready', { 
         sessions: resumedSessions,
         previousSessions,
-        models: AVAILABLE_MODELS 
+        models: getVerifiedModels()
       })
     }
+    
+    // Verify available models in background (non-blocking)
+    verifyAvailableModels(defaultClient).then(verifiedModels => {
+      // Notify frontend of updated model list after verification
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('copilot:modelsVerified', { models: verifiedModels })
+      }
+    }).catch(err => {
+      console.error('Model verification failed:', err)
+    })
     
     // Start keep-alive timer to prevent session timeouts
     startKeepAlive()
@@ -1167,7 +1222,7 @@ ipcMain.handle('copilot:permissionResponse', async (_event, data: {
 })
 
 ipcMain.handle('copilot:setModel', async (_event, data: { sessionId: string, model: string }) => {
-  const validModels = AVAILABLE_MODELS.map(m => m.id)
+  const validModels = getVerifiedModels().map(m => m.id)
   if (!validModels.includes(data.model)) {
     throw new Error(`Invalid model: ${data.model}`)
   }
@@ -1193,7 +1248,7 @@ ipcMain.handle('copilot:setModel', async (_event, data: { sessionId: string, mod
 
 ipcMain.handle('copilot:getModels', async () => {
   const currentModel = store.get('model') as string
-  return { models: AVAILABLE_MODELS, current: currentModel }
+  return { models: getVerifiedModels(), current: currentModel }
 })
 
 // Get current working directory
@@ -2241,7 +2296,7 @@ if (!gotTheLock) {
   }
 
   app.whenReady().then(() => {
-    console.log('Available models:', AVAILABLE_MODELS.map(m => `${m.name} (${m.multiplier}×)`).join(', '))
+    console.log('Baseline models:', AVAILABLE_MODELS.map(m => `${m.name} (${m.multiplier}×)`).join(', '))
     
     createWindow()
 

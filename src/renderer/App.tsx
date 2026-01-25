@@ -709,6 +709,14 @@ const App: React.FC = () => {
       );
     });
 
+    // Listen for verified models update (async verification after startup)
+    const unsubscribeModelsVerified = window.electronAPI.copilot.onModelsVerified(
+      (data) => {
+        console.log("Models verified:", data.models.length, "available");
+        setAvailableModels(data.models);
+      },
+    );
+
     return () => {
       unsubscribeReady();
       unsubscribeDelta();
@@ -718,6 +726,7 @@ const App: React.FC = () => {
       unsubscribeToolEnd();
       unsubscribePermission();
       unsubscribeError();
+      unsubscribeModelsVerified();
     };
   }, []);
 
