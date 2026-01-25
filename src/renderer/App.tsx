@@ -2870,6 +2870,9 @@ Start by exploring the codebase to understand the current implementation, then m
                       if (!showAllowedCommands) {
                         refreshAlwaysAllowed();
                         refreshGlobalSafeCommands();
+                      } else {
+                        // Hide the add command input when collapsing
+                        setShowAddAllowedCommand(false);
                       }
                     }}
                     className="flex-1 flex items-center gap-2 px-3 py-2 text-xs text-copilot-text-muted hover:text-copilot-text hover:bg-copilot-surface transition-colors"
