@@ -238,4 +238,48 @@ echo done`
       expect(extractExecutables('command 2>&1 && echo done')).toContain('echo')
     })
   })
+
+  describe('shell builtins - Issue #50', () => {
+    it('excludes true from || true pattern', () => {
+      const command = 'which node npm 2>&1 || echo "not found"; cat /tmp/.nvmrc 2>&1 || true'
+      const result = extractExecutables(command)
+      expect(result).toContain('which')
+      expect(result).toContain('echo')
+      expect(result).toContain('cat')
+      expect(result).not.toContain('true')
+    })
+
+    it('excludes false from && false pattern', () => {
+      expect(extractExecutables('ls -la && false')).toEqual(['ls'])
+    })
+
+    it('excludes true when used standalone', () => {
+      expect(extractExecutables('ls -la || true')).toEqual(['ls'])
+    })
+
+    it('excludes shell keywords from for loops', () => {
+      const command = 'for f in ~/.copilot/logs/*.log; do echo "=== $f ==="; head -30 "$f" | grep -i "cwd" || true; done'
+      const result = extractExecutables(command)
+      expect(result).toContain('echo')
+      expect(result).toContain('head')
+      expect(result).toContain('grep')
+      expect(result).not.toContain('for')
+      expect(result).not.toContain('in')
+      expect(result).not.toContain('do')
+      expect(result).not.toContain('done')
+      expect(result).not.toContain('true')
+    })
+
+    it('excludes shell keywords from if statements', () => {
+      const command = 'if test -f file.txt; then cat file.txt; else echo missing; fi'
+      const result = extractExecutables(command)
+      expect(result).toContain('test')
+      expect(result).toContain('cat')
+      expect(result).toContain('echo')
+      expect(result).not.toContain('if')
+      expect(result).not.toContain('then')
+      expect(result).not.toContain('else')
+      expect(result).not.toContain('fi')
+    })
+  })
 })

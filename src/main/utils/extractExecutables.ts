@@ -1,6 +1,13 @@
 // Commands that should include their subcommand for granular permission control
 const SUBCOMMAND_EXECUTABLES = ['git', 'npm', 'yarn', 'pnpm', 'docker', 'kubectl']
 
+// Shell builtins that are not real executables and should be skipped
+// These are commonly used in patterns like `|| true` or `&& false` and don't need permission
+const SHELL_BUILTINS_TO_SKIP = ['true', 'false']
+
+// Shell keywords that are part of control flow syntax, not executables
+const SHELL_KEYWORDS_TO_SKIP = ['for', 'in', 'do', 'done', 'while', 'until', 'if', 'then', 'else', 'elif', 'fi', 'case', 'esac', 'select']
+
 /**
  * Extract all executables from a shell command.
  * Handles heredocs, string literals, redirections, and common shell patterns.
@@ -52,6 +59,10 @@ export function extractExecutables(command: string): string[] {
       if (part.startsWith('-')) continue
       // Skip common prefixes
       if (prefixes.includes(part)) continue
+      // Skip shell builtins like 'true' and 'false' used in || true patterns
+      if (SHELL_BUILTINS_TO_SKIP.includes(part)) continue
+      // Skip shell keywords like 'for', 'in', 'do', 'done', etc.
+      if (SHELL_KEYWORDS_TO_SKIP.includes(part)) continue
       // Skip empty or punctuation
       if (!part || /^[<>|&;()]+$/.test(part)) continue
       // Skip redirection targets
