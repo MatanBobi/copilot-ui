@@ -18,8 +18,9 @@
     "test:all": "npm run test && npm run test:e2e",
     "postinstall": "npx @electron/rebuild -f -w node-pty",
     "prebuild-info": "node scripts/build-info.js",
-    "clean": "rm -rf out release",
-    "dist": "npm install && npm run clean && npm run prebuild-info && electron-vite build && electron-builder --mac --dir && node -e \"const pkg=require('./package.json'); const {execSync}=require('child_process'); const dmg='release/Copilot-Skins-'+pkg.version+'-arm64.dmg'; execSync('hdiutil create -volname \\'Copilot Skins\\' -srcfolder release/mac-arm64 -ov -format UDZO '+dmg, {stdio:'inherit'})\""
+    "clean": "node -e \"const fs=require('fs');['out','release'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch{}})\"",
+    "dist": "npm install && npm run clean && npm run prebuild-info && electron-vite build && electron-builder --mac --dir && node -e \"const pkg=require('./package.json'); const {execSync}=require('child_process'); const dmg='release/Copilot-Skins-'+pkg.version+'-arm64.dmg'; execSync('hdiutil create -volname \\'Copilot Skins\\' -srcfolder release/mac-arm64 -ov -format UDZO '+dmg, {stdio:'inherit'})\"",
+    "dist:win": "npm install && npm run clean && npm run prebuild-info && electron-vite build && electron-builder --win --dir"
   },
   "build": {
     "appId": "com.idofrizler.copilot-skins",
@@ -33,6 +34,14 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   },
   "dependencies": {

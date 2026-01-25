@@ -215,13 +215,14 @@ function getCliPath(): string | undefined {
   const arch = process.arch
   const platformArch = `${platform}-${arch}`  // e.g., "darwin-arm64"
   
+  const cliName = platform === 'win32' ? 'copilot.exe' : 'copilot'
   const cliPath = join(
     process.resourcesPath,
     'app.asar.unpacked',
     'node_modules',
     '@github',
     `copilot-${platformArch}`,
-    'copilot'
+    cliName
   )
   
   console.log(`Using packaged CLI path: ${cliPath}`)

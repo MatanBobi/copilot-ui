@@ -3,6 +3,9 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 
+// Regex to split paths on both Unix (/) and Windows (\) separators
+const PATH_SEP_REGEX = /[\\/]/
+
 interface TerminalPanelProps {
   sessionId: string
   cwd: string
@@ -38,7 +41,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
     const xterm = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily: 'Menlo, Monaco, Consolas, "Courier New", monospace',
       theme: {
         background: 'var(--copilot-terminal-bg, #1e1e1e)',
         foreground: 'var(--copilot-terminal-text, #d4d4d4)',
@@ -212,7 +215,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <span className={`w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-copilot-success' : 'bg-copilot-error'}`} />
           <span className="text-[10px] text-copilot-text-muted font-mono truncate" title={cwd}>
-            {cwd.split('/').slice(-2).join('/')}
+            {cwd.split(PATH_SEP_REGEX).slice(-2).join('/')}
           </span>
           {bufferLineCount > 0 && (
             <span className="text-[10px] text-copilot-accent shrink-0">
