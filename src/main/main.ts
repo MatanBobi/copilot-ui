@@ -112,7 +112,22 @@ const store = new Store({
     trustedDirectories: [] as string[],  // Directories that are always trusted
     theme: 'system' as string,  // Theme preference: 'system', 'light', 'dark', or custom theme id
     sessionCwds: {} as Record<string, string>,  // Persistent map of sessionId -> cwd (survives session close)
-    globalSafeCommands: [] as string[]  // Globally safe commands that are auto-approved for all sessions
+    globalSafeCommands: [] as string[],  // Globally safe commands that are auto-approved for all sessions
+    // URL allowlist - domains that are auto-approved for web_fetch (similar to --allow-url in Copilot CLI)
+    allowedUrls: [
+      'github.com',
+      'docs.github.com',
+      'raw.githubusercontent.com',
+      'api.github.com',
+      'npmjs.com',
+      'www.npmjs.com',
+      'pypi.org',
+      'docs.python.org',
+      'developer.mozilla.org',
+      'stackoverflow.com',
+    ] as string[],
+    // URL denylist - domains that are always blocked (similar to --deny-url in Copilot CLI)
+    deniedUrls: [] as string[]
   }
 })
 
@@ -700,6 +715,47 @@ async function handlePermissionRequest(
     }
   }
   
+  // For URL requests (web_fetch), check allowlist/denylist
+  if (request.kind === 'url') {
+    const requestUrl = req.url as string | undefined
+    if (requestUrl) {
+      try {
+        const urlObj = new URL(requestUrl)
+        const hostname = urlObj.hostname
+        
+        // Get URL allowlist and denylist from store
+        const allowedUrls = new Set(store.get('allowedUrls') as string[] || [])
+        const deniedUrls = new Set(store.get('deniedUrls') as string[] || [])
+        
+        // Check denylist first (takes precedence)
+        if (deniedUrls.has(hostname)) {
+          console.log(`[${ourSessionId}] URL denied (denylist):`, hostname)
+          return { kind: 'denied-by-rules' }
+        }
+        
+        // Check if hostname or parent domain is in allowlist
+        const hostParts = hostname.split('.')
+        let isAllowed = allowedUrls.has(hostname)
+        // Check parent domains (e.g., docs.github.com matches github.com)
+        for (let i = 1; i < hostParts.length - 1 && !isAllowed; i++) {
+          const parentDomain = hostParts.slice(i).join('.')
+          if (allowedUrls.has(parentDomain)) {
+            isAllowed = true
+          }
+        }
+        
+        if (isAllowed) {
+          console.log(`[${ourSessionId}] URL auto-approved (allowlist):`, hostname)
+          return { kind: 'approved' }
+        }
+        
+        console.log(`[${ourSessionId}] URL needs approval:`, hostname)
+      } catch (e) {
+        console.log(`[${ourSessionId}] Invalid URL, needs approval:`, requestUrl)
+      }
+    }
+  }
+  
   if (!mainWindow || mainWindow.isDestroyed()) {
     return { kind: 'denied-no-approval-rule-and-could-not-request-from-user' }
   }
@@ -755,6 +811,21 @@ async function createNewSession(model?: string, cwd?: string): Promise<string> {
     model: sessionModel,
     mcpServers: mcpConfig.mcpServers,
     onPermissionRequest: (request, invocation) => handlePermissionRequest(request, invocation, newSession.sessionId),
+    systemMessage: {
+      mode: 'append',
+      content: `
+## Web Information Lookup
+
+You have access to the \`web_fetch\` tool. Use it when:
+- User explicitly asks you to look something up online
+- User provides a specific URL to read
+- You need current documentation for a library/API the user is working with
+- Information is likely outdated (release notes, changelogs, current versions)
+
+When fetching, prefer official/authoritative sources (official docs, GitHub, npm, PyPI, etc.).
+The user will be prompted to approve each new domain you access.
+`
+    },
   })
   
   const sessionId = newSession.sessionId  // Use SDK's session ID
@@ -1243,24 +1314,48 @@ ipcMain.handle('copilot:permissionResponse', async (_event, data: {
   
   // Track "global" for adding to persistent global safe commands
   if (data.decision === 'global') {
-    const executables = pending.executable.split(', ').filter(e => e.trim())
-    const globalSafeCommands = store.get('globalSafeCommands') as string[] || []
-    const newCommands = executables.map(exec => normalizeAlwaysAllowed(exec.trim()))
-    const updatedCommands = [...new Set([...globalSafeCommands, ...newCommands])]
-    store.set('globalSafeCommands', updatedCommands)
-    console.log(`[${pending.sessionId}] Added to global safe commands:`, newCommands)
+    // For URL requests, add to global allowed URLs
+    if (pending.request.kind === 'url' && pending.executable.startsWith('url:')) {
+      const hostname = pending.executable.replace('url:', '')
+      const allowedUrls = store.get('allowedUrls') as string[] || []
+      if (!allowedUrls.includes(hostname)) {
+        allowedUrls.push(hostname)
+        store.set('allowedUrls', allowedUrls)
+        console.log(`[${pending.sessionId}] Added to allowed URLs:`, hostname)
+      }
+    } else {
+      // For other commands, add to global safe commands
+      const executables = pending.executable.split(', ').filter(e => e.trim())
+      const globalSafeCommands = store.get('globalSafeCommands') as string[] || []
+      const newCommands = executables.map(exec => normalizeAlwaysAllowed(exec.trim()))
+      const updatedCommands = [...new Set([...globalSafeCommands, ...newCommands])]
+      store.set('globalSafeCommands', updatedCommands)
+      console.log(`[${pending.sessionId}] Added to global safe commands:`, newCommands)
+    }
   }
   
   // Track "always allow" for this specific executable in the session
   if (data.decision === 'always') {
-    const sessionState = sessions.get(pending.sessionId)
-    if (sessionState) {
-      // Add each executable individually (handle comma-separated list)
-      const executables = pending.executable.split(', ').filter(e => e.trim())
-      for (const exec of executables) {
-        sessionState.alwaysAllowed.add(normalizeAlwaysAllowed(exec.trim()))
+    // For URL requests, also add to global allowed URLs (URLs should persist across sessions)
+    if (pending.request.kind === 'url' && pending.executable.startsWith('url:')) {
+      const hostname = pending.executable.replace('url:', '')
+      const allowedUrls = store.get('allowedUrls') as string[] || []
+      if (!allowedUrls.includes(hostname)) {
+        allowedUrls.push(hostname)
+        store.set('allowedUrls', allowedUrls)
+        console.log(`[${pending.sessionId}] Added to allowed URLs:`, hostname)
       }
-      console.log(`[${pending.sessionId}] Added to always allow:`, executables.map(normalizeAlwaysAllowed))
+    } else {
+      // For other commands, add to session's always allowed
+      const sessionState = sessions.get(pending.sessionId)
+      if (sessionState) {
+        // Add each executable individually (handle comma-separated list)
+        const executables = pending.executable.split(', ').filter(e => e.trim())
+        for (const exec of executables) {
+          sessionState.alwaysAllowed.add(normalizeAlwaysAllowed(exec.trim()))
+        }
+        console.log(`[${pending.sessionId}] Added to always allow:`, executables.map(normalizeAlwaysAllowed))
+      }
     }
   }
   
@@ -1459,6 +1554,69 @@ ipcMain.handle('copilot:removeGlobalSafeCommand', async (_event, command: string
   const updated = globalSafeCommands.filter(c => c !== command)
   store.set('globalSafeCommands', updated)
   console.log('Removed from global safe commands:', command)
+  return { success: true }
+})
+
+// URL Allowlist/Denylist Management
+ipcMain.handle('copilot:getAllowedUrls', async () => {
+  return store.get('allowedUrls') as string[] || []
+})
+
+ipcMain.handle('copilot:addAllowedUrl', async (_event, url: string) => {
+  const allowedUrls = store.get('allowedUrls') as string[] || []
+  // Extract hostname if full URL provided
+  let hostname = url.trim()
+  try {
+    if (hostname.includes('://')) {
+      hostname = new URL(hostname).hostname
+    }
+  } catch {
+    // Use as-is if not a valid URL
+  }
+  if (!allowedUrls.includes(hostname)) {
+    allowedUrls.push(hostname)
+    store.set('allowedUrls', allowedUrls)
+    console.log('Added to allowed URLs:', hostname)
+  }
+  return { success: true, hostname }
+})
+
+ipcMain.handle('copilot:removeAllowedUrl', async (_event, url: string) => {
+  const allowedUrls = store.get('allowedUrls') as string[] || []
+  const updated = allowedUrls.filter(u => u !== url)
+  store.set('allowedUrls', updated)
+  console.log('Removed from allowed URLs:', url)
+  return { success: true }
+})
+
+ipcMain.handle('copilot:getDeniedUrls', async () => {
+  return store.get('deniedUrls') as string[] || []
+})
+
+ipcMain.handle('copilot:addDeniedUrl', async (_event, url: string) => {
+  const deniedUrls = store.get('deniedUrls') as string[] || []
+  // Extract hostname if full URL provided
+  let hostname = url.trim()
+  try {
+    if (hostname.includes('://')) {
+      hostname = new URL(hostname).hostname
+    }
+  } catch {
+    // Use as-is if not a valid URL
+  }
+  if (!deniedUrls.includes(hostname)) {
+    deniedUrls.push(hostname)
+    store.set('deniedUrls', deniedUrls)
+    console.log('Added to denied URLs:', hostname)
+  }
+  return { success: true, hostname }
+})
+
+ipcMain.handle('copilot:removeDeniedUrl', async (_event, url: string) => {
+  const deniedUrls = store.get('deniedUrls') as string[] || []
+  const updated = deniedUrls.filter(u => u !== url)
+  store.set('deniedUrls', updated)
+  console.log('Removed from denied URLs:', url)
   return { success: true }
 })
 

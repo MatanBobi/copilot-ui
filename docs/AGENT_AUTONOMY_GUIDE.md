@@ -12,7 +12,7 @@ This document describes capabilities an AI agent needs to develop, test, and ver
 - ✅ Run component tests with React Testing Library
 - ✅ Run E2E tests with Playwright for Electron - **9 tests**
 - ✅ Build the app (`npm run build`)
-- ✅ Web fetch (limited - markdown conversion only)
+- ✅ Web fetch (enhanced - proactive information lookup)
 - ✅ Search codebase (grep/glob)
 - ✅ Verify UI functionality via E2E tests
 

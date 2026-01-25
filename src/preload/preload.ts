@@ -115,6 +115,25 @@ const electronAPI = {
     removeGlobalSafeCommand: (command: string): Promise<{ success: boolean }> => {
       return ipcRenderer.invoke('copilot:removeGlobalSafeCommand', command)
     },
+    // URL allowlist/denylist management
+    getAllowedUrls: (): Promise<string[]> => {
+      return ipcRenderer.invoke('copilot:getAllowedUrls')
+    },
+    addAllowedUrl: (url: string): Promise<{ success: boolean; hostname: string }> => {
+      return ipcRenderer.invoke('copilot:addAllowedUrl', url)
+    },
+    removeAllowedUrl: (url: string): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('copilot:removeAllowedUrl', url)
+    },
+    getDeniedUrls: (): Promise<string[]> => {
+      return ipcRenderer.invoke('copilot:getDeniedUrls')
+    },
+    addDeniedUrl: (url: string): Promise<{ success: boolean; hostname: string }> => {
+      return ipcRenderer.invoke('copilot:addDeniedUrl', url)
+    },
+    removeDeniedUrl: (url: string): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('copilot:removeDeniedUrl', url)
+    },
     onError: (callback: (data: { sessionId: string; message: string }) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; message: string }): void => callback(data)
       ipcRenderer.on('copilot:error', handler)
