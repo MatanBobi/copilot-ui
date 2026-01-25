@@ -158,6 +158,9 @@ const electronAPI = {
       const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; success: boolean; preCompactionTokens?: number; postCompactionTokens?: number; tokensRemoved?: number; summaryContent?: string; error?: string }): void => callback(data)
       ipcRenderer.on('copilot:compactionComplete', handler)
       return () => ipcRenderer.removeListener('copilot:compactionComplete', handler)
+    },
+    detectChoices: (message: string): Promise<{ isChoice: boolean; options?: { id: string; label: string; description?: string }[] }> => {
+      return ipcRenderer.invoke('copilot:detectChoices', { message })
     }
   },
 

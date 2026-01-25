@@ -9,6 +9,7 @@ export type {
   RalphConfig,
   ContextUsage,
   CompactionStatus,
+  DetectedChoice,
 } from "./session";
 
 export { RALPH_COMPLETION_SIGNAL } from "./session";

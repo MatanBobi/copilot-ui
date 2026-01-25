@@ -31,6 +31,7 @@ import {
   TerminalPanel,
   WorktreeSessionsList,
   CreateWorktreeSession,
+  ChoiceSelector,
 } from "./components";
 import {
   Status,
@@ -44,6 +45,7 @@ import {
   MCPLocalServerConfig,
   MCPRemoteServerConfig,
   RalphConfig,
+  DetectedChoice,
   RALPH_COMPLETION_SIGNAL,
 } from "./types";
 import {
@@ -568,6 +570,29 @@ Only output ${RALPH_COMPLETION_SIGNAL} when ALL items above are verified complet
             });
         }
 
+        // Detect if the last assistant message contains choice options
+        if (tab) {
+          const lastAssistantMsg = [...tab.messages].reverse().find(m => m.role === "assistant" && m.content.trim());
+          if (lastAssistantMsg?.content) {
+            window.electronAPI.copilot
+              .detectChoices(lastAssistantMsg.content)
+              .then((result) => {
+                if (result.isChoice && result.options) {
+                  setTabs((p) =>
+                    p.map((t) =>
+                      t.id === sessionId
+                        ? { ...t, detectedChoices: result.options }
+                        : t,
+                    ),
+                  );
+                }
+              })
+              .catch((err) => {
+                console.error("Failed to detect choices:", err);
+              });
+          }
+        }
+
         return prev.map((tab) => {
           if (tab.id !== sessionId) return tab;
           return {
@@ -920,6 +945,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
       isProcessing: true,
       activeTools: [],
       ralphConfig,
+      detectedChoices: undefined, // Clear any detected choices
     });
     setInputValue("");
     setTerminalAttachment(null);
@@ -957,6 +983,43 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         ? { ...activeTab.ralphConfig, active: false }
         : undefined,
     });
+  }, [activeTab, updateTab]);
+
+  // Handle selecting a choice from the choice selector
+  const handleChoiceSelect = useCallback(async (choice: DetectedChoice) => {
+    if (!activeTab || activeTab.isProcessing) return;
+
+    const userMessage: Message = {
+      id: generateId(),
+      role: "user",
+      content: choice.label,
+    };
+
+    const tabId = activeTab.id;
+
+    updateTab(tabId, {
+      messages: [
+        ...activeTab.messages,
+        userMessage,
+        {
+          id: generateId(),
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+          timestamp: Date.now(),
+        },
+      ],
+      isProcessing: true,
+      activeTools: [],
+      detectedChoices: undefined, // Clear choices
+    });
+
+    try {
+      await window.electronAPI.copilot.send(tabId, choice.label);
+    } catch (error) {
+      console.error("Send error:", error);
+      updateTab(tabId, { isProcessing: false });
+    }
   }, [activeTab, updateTab]);
 
   const handleKeyPress = useCallback(
@@ -2322,6 +2385,16 @@ Start by exploring the codebase to understand the current implementation, then m
                     <span className="text-[10px] text-copilot-text-muted mt-1 ml-1">
                       {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
+                  )}
+                  {/* Show choice selector for the last assistant message when choices are detected */}
+                  {index === lastAssistantIndex && 
+                   !activeTab?.isProcessing && 
+                   activeTab?.detectedChoices && 
+                   activeTab.detectedChoices.length > 0 && (
+                    <ChoiceSelector
+                      choices={activeTab.detectedChoices}
+                      onSelect={handleChoiceSelect}
+                    />
                   )}
                 </div>
               ));

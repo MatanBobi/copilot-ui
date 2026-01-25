@@ -1299,6 +1299,74 @@ ipcMain.handle('git:generateCommitMessage', async (_event, data: { diff: string 
   }
 })
 
+// Detect if a message contains a multi-choice question for the user
+// Returns structured options if detected, null otherwise
+ipcMain.handle('copilot:detectChoices', async (_event, data: { message: string }) => {
+  const defaultClient = await getClientForCwd(process.cwd())
+  
+  try {
+    const quickModel = await getQuickTasksModel(defaultClient)
+    
+    const tempSession = await defaultClient.createSession({
+      model: quickModel,
+      systemMessage: {
+        mode: 'replace',
+        content: `You analyze messages to detect if they ask the user to choose between options.
+
+If the message asks the user to pick from multiple choices, respond with JSON:
+{"isChoice":true,"options":[{"id":"short_id","label":"Short Label","description":"Brief description"},...]}
+
+If the message does NOT ask the user to choose, respond with:
+{"isChoice":false}
+
+Rules:
+- Only detect clear choice questions (e.g., "Which would you prefer?", "Please choose:", "Would you like option A or B?")
+- Extract 2-5 options maximum
+- Use short, lowercase snake_case ids (e.g., "rebase", "merge", "cancel")
+- Labels should be concise (1-3 words)
+- Descriptions are optional, keep under 10 words
+- Respond with ONLY valid JSON, no markdown, no explanation`
+      }
+    })
+    
+    const sessionId = tempSession.sessionId
+    // Truncate message if too long
+    const truncatedMessage = data.message.length > 2000 ? data.message.slice(-2000) : data.message
+    const prompt = `Analyze this message:\n\n${truncatedMessage}`
+    const response = await tempSession.sendAndWait({ prompt })
+    
+    await tempSession.destroy()
+    await defaultClient.deleteSession(sessionId)
+    
+    // Parse the JSON response
+    const content = response?.data?.content || ''
+    try {
+      // Extract JSON from response (handle potential markdown wrapping)
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0])
+        if (parsed.isChoice && Array.isArray(parsed.options) && parsed.options.length >= 2) {
+          return {
+            isChoice: true,
+            options: parsed.options.slice(0, 5).map((opt: { id?: string; label?: string; description?: string }) => ({
+              id: String(opt.id || '').slice(0, 30),
+              label: String(opt.label || opt.id || '').slice(0, 50),
+              description: opt.description ? String(opt.description).slice(0, 100) : undefined
+            }))
+          }
+        }
+      }
+      return { isChoice: false }
+    } catch {
+      console.warn('Failed to parse choice detection response:', content)
+      return { isChoice: false }
+    }
+  } catch (error) {
+    console.error('Failed to detect choices:', error)
+    return { isChoice: false }
+  }
+})
+
 // Handle permission response from renderer
 ipcMain.handle('copilot:permissionResponse', async (_event, data: { 
   requestId: string

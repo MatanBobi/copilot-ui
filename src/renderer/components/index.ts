@@ -1,5 +1,6 @@
 // Shared UI Components
 export * from './Button'
+export * from './ChoiceSelector'
 export * from './Dropdown'
 export * from './IconButton'
 export * from './Icons'

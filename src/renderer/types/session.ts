@@ -70,6 +70,13 @@ export interface ContextUsage {
 // Compaction status
 export type CompactionStatus = "idle" | "compacting" | "completed";
 
+// Detected choice option for user selection
+export interface DetectedChoice {
+  id: string;
+  label: string;
+  description?: string;
+}
+
 // Tab/Session state
 export interface TabState {
   id: string;
@@ -92,4 +99,5 @@ export interface TabState {
   ralphConfig?: RalphConfig; // Ralph Wiggum loop configuration
   contextUsage?: ContextUsage; // Current context window usage
   compactionStatus?: CompactionStatus; // Status of context compaction
+  detectedChoices?: DetectedChoice[]; // Choices detected in last assistant message
 }

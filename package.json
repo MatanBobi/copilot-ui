@@ -15,6 +15,7 @@
     "test:components": "vitest run --config vitest.config.ts tests/components",
     "test:e2e": "npm run build && npx playwright test",
     "test:e2e:headed": "npm run build && npx playwright test --headed",
+    "test:integration": "node --import tsx/esm tests/integration/choice-detection.test.ts",
     "test:all": "npm run test && npm run test:e2e",
     "postinstall": "npx @electron/rebuild -f -w node-pty",
     "prebuild-info": "node scripts/build-info.js",
@@ -36,7 +37,10 @@
       "icon": "build/icon.icns"
     },
     "win": {
-      "target": ["nsis", "portable"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {
@@ -75,6 +79,7 @@
     "jsdom": "^27.4.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.3.0",
     "vite": "^5.0.0",
     "vitest": "^4.0.18"
