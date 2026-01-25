@@ -15,12 +15,21 @@ import { net } from 'electron'
 const execAsync = promisify(exec)
 
 // GitHub issue types
+interface GitHubIssueComment {
+  body: string
+  user: {
+    login: string
+  }
+  created_at: string
+}
+
 interface GitHubIssue {
   number: number
   title: string
   body: string | null
   state: 'open' | 'closed'
   html_url: string
+  comments?: GitHubIssueComment[]
 }
 
 // Session registry types
@@ -610,6 +619,52 @@ function generateBranchFromTitle(issueNumber: number, title: string): string {
 }
 
 /**
+ * Fetch comments for a GitHub issue
+ */
+function fetchGitHubIssueComments(owner: string, repo: string, issueNumber: number): Promise<GitHubIssueComment[]> {
+  const apiUrl = `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`
+  
+  return new Promise((resolve) => {
+    const request = net.request({
+      method: 'GET',
+      url: apiUrl
+    })
+    
+    request.setHeader('Accept', 'application/vnd.github.v3+json')
+    request.setHeader('User-Agent', 'Copilot-UI')
+    
+    let responseBody = ''
+    
+    request.on('response', (response) => {
+      if (response.statusCode !== 200) {
+        // If we can't fetch comments, just return empty array - don't fail the whole request
+        resolve([])
+        return
+      }
+      
+      response.on('data', (chunk) => {
+        responseBody += chunk.toString()
+      })
+      
+      response.on('end', () => {
+        try {
+          const comments = JSON.parse(responseBody) as GitHubIssueComment[]
+          resolve(comments)
+        } catch {
+          resolve([])
+        }
+      })
+    })
+    
+    request.on('error', () => {
+      resolve([])
+    })
+    
+    request.end()
+  })
+}
+
+/**
  * Fetch GitHub issue details and generate a branch name
  */
 export async function fetchGitHubIssue(issueUrl: string): Promise<{
@@ -652,10 +707,15 @@ export async function fetchGitHubIssue(issueUrl: string): Promise<{
         responseBody += chunk.toString()
       })
       
-      response.on('end', () => {
+      response.on('end', async () => {
         try {
           const issue = JSON.parse(responseBody) as GitHubIssue
           const suggestedBranch = generateBranchFromTitle(issue.number, issue.title)
+          
+          // Fetch comments for the issue
+          const comments = await fetchGitHubIssueComments(owner, repo, issueNumber)
+          issue.comments = comments
+          
           resolve({ success: true, issue, suggestedBranch })
         } catch (err) {
           resolve({ success: false, error: 'Failed to parse GitHub response' })

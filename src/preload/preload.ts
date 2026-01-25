@@ -242,7 +242,14 @@ const electronAPI = {
   worktree: {
     fetchGitHubIssue: (issueUrl: string): Promise<{
       success: boolean
-      issue?: { number: number; title: string; body: string | null; state: 'open' | 'closed'; html_url: string }
+      issue?: { 
+        number: number
+        title: string
+        body: string | null
+        state: 'open' | 'closed'
+        html_url: string
+        comments?: Array<{ body: string; user: { login: string }; created_at: string }>
+      }
       suggestedBranch?: string
       error?: string
     }> => {

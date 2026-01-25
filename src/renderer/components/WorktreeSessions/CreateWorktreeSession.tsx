@@ -3,10 +3,17 @@ import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { Spinner } from '../Spinner'
 
+export interface IssueComment {
+  body: string
+  user: { login: string }
+  created_at: string
+}
+
 export interface IssueInfo {
   url: string
   title: string
   body: string | null
+  comments?: IssueComment[]
 }
 
 interface CreateWorktreeSessionProps {
@@ -31,6 +38,7 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
   const [gitVersion, setGitVersion] = useState<string>('')
   const [issueTitle, setIssueTitle] = useState<string | null>(null)
   const [issueBody, setIssueBody] = useState<string | null>(null)
+  const [issueComments, setIssueComments] = useState<IssueComment[] | undefined>(undefined)
   const [autoStart, setAutoStart] = useState(false)
 
   useEffect(() => {
@@ -40,6 +48,7 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
       setError(null)
       setIssueTitle(null)
       setIssueBody(null)
+      setIssueComments(undefined)
       setAutoStart(false)
       checkGitVersion()
     }
@@ -69,6 +78,7 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
         setBranch(result.suggestedBranch)
         setIssueTitle(result.issue.title)
         setIssueBody(result.issue.body)
+        setIssueComments(result.issue.comments)
       } else {
         setError(result.error || 'Failed to fetch issue')
       }
@@ -99,7 +109,8 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
           issueInfo: {
             url: issueUrl.trim(),
             title: issueTitle,
-            body: issueBody
+            body: issueBody,
+            comments: issueComments
           }
         } : undefined
         onSessionCreated(result.session.worktreePath, result.session.branch, autoStartInfo)

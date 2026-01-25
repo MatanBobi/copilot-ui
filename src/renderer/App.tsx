@@ -1445,7 +1445,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
   const handleWorktreeSessionCreated = async (
     worktreePath: string,
     branch: string,
-    autoStart?: { issueInfo: { url: string; title: string; body: string | null } }
+    autoStart?: { issueInfo: { url: string; title: string; body: string | null; comments?: Array<{ body: string; user: { login: string }; created_at: string }> } }
   ) => {
     try {
       // Check trust for the worktree directory
@@ -1501,12 +1501,21 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
           ? `## Issue Description\n\n${autoStart.issueInfo.body}`
           : '';
         
+        // Format comments if available
+        let commentsContext = '';
+        if (autoStart.issueInfo.comments && autoStart.issueInfo.comments.length > 0) {
+          const formattedComments = autoStart.issueInfo.comments
+            .map(comment => `### Comment by @${comment.user.login}\n\n${comment.body}`)
+            .join('\n\n');
+          commentsContext = `\n\n## Issue Comments\n\n${formattedComments}`;
+        }
+        
         const initialPrompt = `Please implement the following GitHub issue:
 
 **Issue URL:** ${autoStart.issueInfo.url}
 **Title:** ${autoStart.issueInfo.title}
 
-${issueContext}
+${issueContext}${commentsContext}
 
 Start by exploring the codebase to understand the current implementation, then make the necessary changes to address this issue.`;
 
