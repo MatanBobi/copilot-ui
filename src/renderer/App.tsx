@@ -28,6 +28,7 @@ import {
   GlobeIcon,
   RalphIcon,
   TerminalIcon,
+  PaletteIcon,
   BookIcon,
   TerminalPanel,
   WorktreeSessionsList,
@@ -1948,16 +1949,13 @@ Start by exploring the codebase to understand the current implementation, then m
                 id: theme.id,
                 label: theme.name,
                 icon:
-                  theme.type === "dark" ? (
+                  theme.id === "dark" ? (
                     <MoonIcon size={12} />
-                  ) : (
+                  ) : theme.id === "light" ? (
                     <SunIcon size={12} />
+                  ) : (
+                    <PaletteIcon size={12} />
                   ),
-                rightContent: theme.author && (
-                  <span className="ml-auto text-copilot-text-muted text-[10px]">
-                    by {theme.author}
-                  </span>
-                ),
               })),
             ]}
             onSelect={(id) => setTheme(id)}
