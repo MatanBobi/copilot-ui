@@ -464,13 +464,45 @@ const App: React.FC = () => {
           const maxReached = tab.ralphConfig.currentIteration >= tab.ralphConfig.maxIterations;
 
           if (!hasCompletionPromise && !maxReached) {
-            // Continue Ralph loop - re-send the same prompt
+            // Continue Ralph loop - include previous output for context
             const nextIteration = tab.ralphConfig.currentIteration + 1;
             console.log(`[Ralph] Iteration ${nextIteration}/${tab.ralphConfig.maxIterations}`);
             
+            // Build continuation prompt that includes the agent's last response for context
+            // This differs from original Ralph which relies solely on files/git history
+            const lastResponseContent = lastMessage?.content || '';
+            const continuationPrompt = `🔄 **Ralph Loop - Iteration ${nextIteration}/${tab.ralphConfig.maxIterations}**
+
+---
+
+## Your Previous Response (for context):
+
+${lastResponseContent}
+
+---
+
+## Original Task:
+
+${tab.ralphConfig.originalPrompt}
+
+---
+
+## Continue Working
+
+Continue where you left off. Check your plan, verify what's done, and complete remaining items.
+
+COMPLETION CHECKLIST (verify ALL before signaling complete):
+- [ ] Plan exists and all items checked off
+- [ ] Code builds without errors
+- [ ] Feature tested and working (actually ran the app)
+- [ ] No console errors introduced
+- [ ] Tests added/updated if applicable
+
+Only output ${RALPH_COMPLETION_SIGNAL} when ALL items above are verified complete.`;
+            
             // Schedule the re-send after state update
             setTimeout(() => {
-              window.electronAPI.copilot.send(sessionId, tab.ralphConfig!.originalPrompt);
+              window.electronAPI.copilot.send(sessionId, continuationPrompt);
             }, 100);
 
             // Update iteration count and keep processing
@@ -781,9 +813,31 @@ const App: React.FC = () => {
         }
       : undefined;
     
-    // If Ralph is enabled, append completion instruction to the prompt
+    // If Ralph is enabled, append detailed completion instructions to the prompt
     const promptToSend = ralphEnabled
-      ? `${userMessage.content}\n\nWhen you have fully completed this task, output exactly: ${RALPH_COMPLETION_SIGNAL}`
+      ? `${userMessage.content}
+
+## COMPLETION REQUIREMENTS
+
+You are running in an autonomous loop. Before signaling completion, you MUST verify ALL of the following:
+
+1. **Follow a Plan**: Create a detailed plan/PRD at the start and update it as you progress. Go over ALL items in the plan and verify each one is complete.
+
+2. **Test the Feature**: Actually build and run the application to verify the feature works as expected:
+   - Run the build (e.g., \`npm run build\`)
+   - Start the app if needed and manually test the functionality
+   - Verify the expected behavior works end-to-end
+
+3. **Check for Errors**: 
+   - Fix any build errors or warnings you introduced
+   - Check for and fix any console errors (runtime errors, React warnings, etc.)
+   - Ensure no regressions in existing functionality
+
+4. **Add Tests**: If the codebase has tests, add appropriate test coverage for the new functionality.
+
+5. **Verify Completion**: Go through each item in your plan one more time to ensure nothing was missed.
+
+Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETION_SIGNAL}`
       : userMessage.content;
 
     updateTab(tabId, {
@@ -2447,7 +2501,7 @@ Start by exploring the codebase to understand the current implementation, then m
                       />
                     </div>
                     <p className="text-[10px] text-copilot-text-muted">
-                      The agent will loop until it signals completion or hits the max iterations.
+                      The agent will loop until verified complete. Each iteration includes context from the previous response. The agent must: follow a plan, test the feature, fix errors, add tests if possible, and verify all plan items.
                     </p>
                   </div>
                 )}
