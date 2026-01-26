@@ -8,6 +8,29 @@ const SHELL_BUILTINS_TO_SKIP = ['true', 'false']
 // Shell keywords that are part of control flow syntax, not executables
 const SHELL_KEYWORDS_TO_SKIP = ['for', 'in', 'do', 'done', 'while', 'until', 'if', 'then', 'else', 'elif', 'fi', 'case', 'esac', 'select']
 
+// Destructive executables that should NEVER be auto-approved.
+// These commands can delete files/data and require explicit user permission every time.
+// Issue #65: Protect against accidental deletions
+const DESTRUCTIVE_EXECUTABLES = new Set([
+  // File deletion commands
+  'rm',
+  'rmdir',
+  'unlink',
+  'shred',
+  // find with -delete action
+  'find -delete',
+  // Dangerous disk/partition commands
+  'dd',
+  'mkfs',
+  'fdisk',
+  'parted',
+  // Git destructive commands (force push, reset, clean)
+  'git reset',
+  'git clean',
+  'git push --force',
+  'git push -f',
+])
+
 /**
  * Extract all executables from a shell command.
  * Handles heredocs, string literals, redirections, and common shell patterns.
@@ -103,4 +126,93 @@ export function extractExecutables(command: string): string[] {
   }
   
   return executables
+}
+
+/**
+ * Check if an executable identifier is destructive (can delete files/data).
+ * Used to prevent auto-approval of dangerous commands.
+ */
+export function isDestructiveExecutable(executableId: string): boolean {
+  // Direct match
+  if (DESTRUCTIVE_EXECUTABLES.has(executableId)) {
+    return true
+  }
+  // For 'find', check if it has -delete or -exec rm patterns
+  if (executableId === 'find') {
+    return false  // 'find' alone is safe, but 'find -delete' is checked separately
+  }
+  return false
+}
+
+/**
+ * Check if a shell command contains any destructive operations.
+ * Returns true if the command could delete files or destroy data.
+ */
+export function containsDestructiveCommand(command: string): boolean {
+  const executables = extractExecutables(command)
+  
+  // Check if any executable is destructive
+  for (const exec of executables) {
+    if (isDestructiveExecutable(exec)) {
+      return true
+    }
+  }
+  
+  // Special case: 'find' with -delete flag or -exec rm
+  // We need to check the raw command since extractExecutables doesn't capture flags
+  const commandLower = command.toLowerCase()
+  if (commandLower.includes('find ') && 
+      (commandLower.includes('-delete') || 
+       commandLower.includes('-exec rm') ||
+       commandLower.includes('-exec /bin/rm') ||
+       commandLower.includes('-exec /usr/bin/rm'))) {
+    return true
+  }
+  
+  // Special case: xargs with rm (e.g., "ls | xargs rm")
+  if (commandLower.includes('xargs rm') ||
+      commandLower.includes('xargs /bin/rm') ||
+      commandLower.includes('xargs /usr/bin/rm')) {
+    return true
+  }
+  
+  return false
+}
+
+/**
+ * Get a list of destructive executables found in a command.
+ * Used to display warnings to users about which commands are dangerous.
+ */
+export function getDestructiveExecutables(command: string): string[] {
+  const executables = extractExecutables(command)
+  const destructive: string[] = []
+  
+  for (const exec of executables) {
+    if (isDestructiveExecutable(exec)) {
+      destructive.push(exec)
+    }
+  }
+  
+  // Special case: find with -delete/-exec rm
+  const commandLower = command.toLowerCase()
+  if (commandLower.includes('find ') && 
+      (commandLower.includes('-delete') || 
+       commandLower.includes('-exec rm') ||
+       commandLower.includes('-exec /bin/rm') ||
+       commandLower.includes('-exec /usr/bin/rm'))) {
+    if (!destructive.includes('find -delete')) {
+      destructive.push('find -delete')
+    }
+  }
+  
+  // Special case: xargs with rm
+  if (commandLower.includes('xargs rm') ||
+      commandLower.includes('xargs /bin/rm') ||
+      commandLower.includes('xargs /usr/bin/rm')) {
+    if (!destructive.includes('xargs rm')) {
+      destructive.push('xargs rm')
+    }
+  }
+  
+  return destructive
 }

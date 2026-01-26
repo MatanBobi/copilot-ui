@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractExecutables } from './extractExecutables'
+import { extractExecutables, containsDestructiveCommand, getDestructiveExecutables, isDestructiveExecutable } from './extractExecutables'
 
 describe('extractExecutables', () => {
   describe('basic commands', () => {
@@ -280,6 +280,121 @@ echo done`
       expect(result).not.toContain('then')
       expect(result).not.toContain('else')
       expect(result).not.toContain('fi')
+    })
+  })
+
+  describe('destructive command detection - Issue #65', () => {
+    describe('isDestructiveExecutable', () => {
+      it('detects rm as destructive', () => {
+        expect(isDestructiveExecutable('rm')).toBe(true)
+      })
+
+      it('detects rmdir as destructive', () => {
+        expect(isDestructiveExecutable('rmdir')).toBe(true)
+      })
+
+      it('detects shred as destructive', () => {
+        expect(isDestructiveExecutable('shred')).toBe(true)
+      })
+
+      it('detects unlink as destructive', () => {
+        expect(isDestructiveExecutable('unlink')).toBe(true)
+      })
+
+      it('does not detect ls as destructive', () => {
+        expect(isDestructiveExecutable('ls')).toBe(false)
+      })
+
+      it('does not detect cat as destructive', () => {
+        expect(isDestructiveExecutable('cat')).toBe(false)
+      })
+
+      it('detects git reset as destructive', () => {
+        expect(isDestructiveExecutable('git reset')).toBe(true)
+      })
+
+      it('detects git clean as destructive', () => {
+        expect(isDestructiveExecutable('git clean')).toBe(true)
+      })
+    })
+
+    describe('containsDestructiveCommand', () => {
+      it('detects rm command', () => {
+        expect(containsDestructiveCommand('rm -rf /tmp/test')).toBe(true)
+      })
+
+      it('detects rm with full path', () => {
+        expect(containsDestructiveCommand('/bin/rm -rf /tmp/test')).toBe(true)
+      })
+
+      it('detects rm in pipeline', () => {
+        expect(containsDestructiveCommand('ls | xargs rm')).toBe(true)
+      })
+
+      it('detects rm in chained commands', () => {
+        expect(containsDestructiveCommand('cd /tmp && rm -rf test')).toBe(true)
+      })
+
+      it('detects find with -delete', () => {
+        expect(containsDestructiveCommand('find /tmp -name "*.tmp" -delete')).toBe(true)
+      })
+
+      it('detects find with -exec rm', () => {
+        expect(containsDestructiveCommand('find /tmp -name "*.tmp" -exec rm {} \\;')).toBe(true)
+      })
+
+      it('detects find with -exec /bin/rm', () => {
+        expect(containsDestructiveCommand('find /tmp -name "*.tmp" -exec /bin/rm {} \\;')).toBe(true)
+      })
+
+      it('does not flag find without -delete or -exec rm', () => {
+        expect(containsDestructiveCommand('find /tmp -name "*.log"')).toBe(false)
+      })
+
+      it('does not flag safe commands', () => {
+        expect(containsDestructiveCommand('ls -la')).toBe(false)
+        expect(containsDestructiveCommand('cat file.txt')).toBe(false)
+        expect(containsDestructiveCommand('grep pattern file.txt')).toBe(false)
+      })
+
+      it('detects shred command', () => {
+        expect(containsDestructiveCommand('shred -u secret.txt')).toBe(true)
+      })
+
+      it('detects rmdir command', () => {
+        expect(containsDestructiveCommand('rmdir /tmp/emptydir')).toBe(true)
+      })
+
+      it('detects the exact command from Issue #65', () => {
+        const command = "find . -maxdepth 1 -type d -name '*-*-*-*-*' ! -name '1f8034d3-...' -exec rm -rf {} +"
+        expect(containsDestructiveCommand(command)).toBe(true)
+      })
+    })
+
+    describe('getDestructiveExecutables', () => {
+      it('returns rm for rm command', () => {
+        expect(getDestructiveExecutables('rm -rf /tmp/test')).toContain('rm')
+      })
+
+      it('returns multiple destructive commands', () => {
+        const result = getDestructiveExecutables('rm file1 && shred file2')
+        expect(result).toContain('rm')
+        expect(result).toContain('shred')
+      })
+
+      it('returns find -delete for find with -delete', () => {
+        const result = getDestructiveExecutables('find /tmp -name "*.tmp" -delete')
+        expect(result).toContain('find -delete')
+      })
+
+      it('returns find -delete for find with -exec rm', () => {
+        const result = getDestructiveExecutables('find /tmp -exec rm {} \\;')
+        expect(result).toContain('find -delete')
+      })
+
+      it('returns empty array for safe commands', () => {
+        expect(getDestructiveExecutables('ls -la')).toEqual([])
+      })
     })
   })
 })

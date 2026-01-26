@@ -9,7 +9,7 @@ const execAsync = promisify(exec)
 import { CopilotClient, CopilotSession, PermissionRequest, PermissionRequestResult } from '@github/copilot-sdk'
 import Store from 'electron-store'
 import log from 'electron-log/main'
-import { extractExecutables } from './utils/extractExecutables'
+import { extractExecutables, containsDestructiveCommand, getDestructiveExecutables } from './utils/extractExecutables'
 import * as worktree from './worktree'
 import * as ptyManager from './pty'
 import * as browserManager from './browser'
@@ -631,7 +631,36 @@ async function handlePermissionRequest(
   
   // For shell commands, check each executable individually
   if (request.kind === 'shell' && req.fullCommandText) {
-    const executables = extractExecutables(req.fullCommandText as string)
+    const commandText = req.fullCommandText as string
+    const executables = extractExecutables(commandText)
+    
+    // Check for destructive commands - these NEVER get auto-approved (Issue #65)
+    const isDestructive = containsDestructiveCommand(commandText)
+    const destructiveExecutables = isDestructive ? getDestructiveExecutables(commandText) : []
+    
+    if (isDestructive) {
+      console.log(`[${ourSessionId}] DESTRUCTIVE command detected:`, destructiveExecutables)
+      
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { kind: 'denied-no-approval-rule-and-could-not-request-from-user' }
+      }
+      
+      // Always require explicit permission for destructive commands
+      return new Promise((resolve) => {
+        pendingPermissions.set(requestId, { resolve, request, executable: destructiveExecutables.join(', '), sessionId: ourSessionId })
+        mainWindow!.webContents.send('copilot:permission', {
+          requestId,
+          sessionId: ourSessionId,
+          executable: destructiveExecutables.join(', '),
+          executables: destructiveExecutables,
+          allExecutables: executables,
+          isOutOfScope: false,
+          isDestructive: true,  // Flag for UI to show warning
+          ...request
+        })
+        bounceDock()
+      })
+    }
     
     // Filter to only unapproved executables (exclude globally-auto-approved commands and global safe commands)
     const unapproved = executables.filter(exec =>
@@ -664,6 +693,7 @@ async function handlePermissionRequest(
         executables: unapproved,  // Array of executables needing approval
         allExecutables: executables,  // All executables in command
         isOutOfScope: false,
+        isDestructive: false,
         ...request
       })
       bounceDock()
