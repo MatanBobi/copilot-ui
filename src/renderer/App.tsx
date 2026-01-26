@@ -76,7 +76,7 @@ const App: React.FC = () => {
   const [showAddAllowedCommand, setShowAddAllowedCommand] = useState(false);
   const [addCommandScope, setAddCommandScope] = useState<"session" | "global">("session");
   const [addCommandValue, setAddCommandValue] = useState("");
-  const [showEditedFiles, setShowEditedFiles] = useState(true);
+  const [showEditedFiles, setShowEditedFiles] = useState(false);
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
