@@ -1533,7 +1533,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
   const handleWorktreeSessionCreated = async (
     worktreePath: string,
     branch: string,
-    autoStart?: { issueInfo: { url: string; title: string; body: string | null; comments?: Array<{ body: string; user: { login: string }; created_at: string }> } }
+    autoStart?: { issueInfo: { url: string; title: string; body: string | null; comments?: Array<{ body: string; user: { login: string }; created_at: string }> }; useRalphWiggum?: boolean; ralphMaxIterations?: number }
   ) => {
     try {
       // Check trust for the worktree directory
@@ -1607,10 +1607,41 @@ ${issueContext}${commentsContext}
 
 Start by exploring the codebase to understand the current implementation, then make the necessary changes to address this issue.`;
 
+        // If Ralph Wiggum is enabled, append completion instructions
+        const promptToSend = autoStart.useRalphWiggum
+          ? `${initialPrompt}
+
+## COMPLETION REQUIREMENTS
+
+When you have finished the task, please verify:
+
+1. **Build/Lint Check**: Run any build or lint commands to verify there are no errors.
+
+2. **Test Check**: Run relevant tests to verify your changes work correctly.
+
+3. **Code Review**: Review your changes one final time for any issues.
+
+4. **Git Status**: Use git diff or git status to review all changes made.
+
+5. **Verify Completion**: Go through each item in your plan one more time to ensure nothing was missed.
+
+Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETION_SIGNAL}`
+          : initialPrompt;
+
+        // Set up Ralph config if enabled
+        const ralphConfig: RalphConfig | undefined = autoStart.useRalphWiggum
+          ? {
+              originalPrompt: initialPrompt,
+              maxIterations: autoStart.ralphMaxIterations || 20,
+              currentIteration: 1,
+              active: true,
+            }
+          : undefined;
+
         const userMessage: Message = {
           id: generateId(),
           role: "user",
-          content: initialPrompt,
+          content: promptToSend,
         };
 
         // Update tab with the initial message and start processing
@@ -1629,6 +1660,7 @@ Start by exploring the codebase to understand the current implementation, then m
                     },
                   ],
                   isProcessing: true,
+                  ralphConfig,
                 }
               : tab
           )
@@ -1636,13 +1668,13 @@ Start by exploring the codebase to understand the current implementation, then m
 
         // Send the prompt
         try {
-          await window.electronAPI.copilot.send(result.sessionId, initialPrompt);
+          await window.electronAPI.copilot.send(result.sessionId, promptToSend);
         } catch (error) {
           console.error("Failed to send initial prompt:", error);
           setTabs((prev) =>
             prev.map((tab) =>
               tab.id === result.sessionId
-                ? { ...tab, isProcessing: false }
+                ? { ...tab, isProcessing: false, ralphConfig: undefined }
                 : tab
             )
           );

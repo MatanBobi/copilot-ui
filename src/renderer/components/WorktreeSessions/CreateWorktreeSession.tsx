@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { Spinner } from '../Spinner'
+import { RalphIcon, ChevronDownIcon, ChevronRightIcon } from '../Icons/Icons'
 
 export interface IssueComment {
   body: string
@@ -20,7 +21,7 @@ interface CreateWorktreeSessionProps {
   isOpen: boolean
   onClose: () => void
   repoPath: string
-  onSessionCreated: (worktreePath: string, branch: string, autoStart?: { issueInfo: IssueInfo }) => void
+  onSessionCreated: (worktreePath: string, branch: string, autoStart?: { issueInfo: IssueInfo; useRalphWiggum?: boolean; ralphMaxIterations?: number }) => void
 }
 
 export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
@@ -40,6 +41,9 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
   const [issueBody, setIssueBody] = useState<string | null>(null)
   const [issueComments, setIssueComments] = useState<IssueComment[] | undefined>(undefined)
   const [autoStart, setAutoStart] = useState(false)
+  const [useRalphWiggum, setUseRalphWiggum] = useState(false)
+  const [ralphMaxIterations, setRalphMaxIterations] = useState(20)
+  const [showIssueSection, setShowIssueSection] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
@@ -50,6 +54,9 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
       setIssueBody(null)
       setIssueComments(undefined)
       setAutoStart(false)
+      setUseRalphWiggum(false)
+      setRalphMaxIterations(20)
+      setShowIssueSection(false)
       checkGitVersion()
     }
   }, [isOpen])
@@ -111,7 +118,9 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
             title: issueTitle,
             body: issueBody,
             comments: issueComments
-          }
+          },
+          useRalphWiggum,
+          ralphMaxIterations
         } : undefined
         onSessionCreated(result.session.worktreePath, result.session.branch, autoStartInfo)
         onClose()
@@ -156,56 +165,88 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
             </div>
 
             <div className="mb-4">
-              <label className="block text-xs text-copilot-text-muted mb-1">
-                GitHub Issue URL (optional)
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={issueUrl}
-                  onChange={(e) => setIssueUrl(e.target.value)}
-                  onKeyDown={handleIssueKeyDown}
-                  placeholder="https://github.com/owner/repo/issues/123"
-                  className="flex-1 px-3 py-2 bg-copilot-bg border border-copilot-border rounded text-sm text-copilot-text placeholder:text-copilot-text-muted focus:outline-none focus:border-copilot-accent"
-                  disabled={isCreating || isFetchingIssue}
-                />
-                <Button
-                  variant="secondary"
-                  onClick={handleFetchIssue}
-                  disabled={!issueUrl.trim() || isFetchingIssue || isCreating}
-                >
-                  {isFetchingIssue ? <Spinner /> : 'Fetch'}
-                </Button>
-              </div>
-              <p className="text-xs text-copilot-text-muted mt-1">
-                Paste a GitHub issue URL to auto-generate a branch name.
-              </p>
-              {issueTitle && (
-                <p className="text-xs text-copilot-accent mt-1 truncate" title={issueTitle}>
-                  Issue: {issueTitle}
-                </p>
+              <button
+                type="button"
+                onClick={() => setShowIssueSection(!showIssueSection)}
+                className="flex items-center gap-1 text-xs text-copilot-text-muted hover:text-copilot-text"
+              >
+                {showIssueSection ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+                GitHub Issue (optional)
+              </button>
+              {showIssueSection && (
+                <>
+                  <div className="flex gap-2 mt-1">
+                    <input
+                      type="text"
+                      value={issueUrl}
+                      onChange={(e) => setIssueUrl(e.target.value)}
+                      onKeyDown={handleIssueKeyDown}
+                      placeholder="https://github.com/owner/repo/issues/123"
+                      className="flex-1 px-3 py-2 bg-copilot-bg border border-copilot-border rounded text-sm text-copilot-text placeholder:text-copilot-text-muted focus:outline-none focus:border-copilot-accent"
+                      disabled={isCreating || isFetchingIssue}
+                    />
+                    <Button
+                      variant="secondary"
+                      onClick={handleFetchIssue}
+                      disabled={!issueUrl.trim() || isFetchingIssue || isCreating}
+                    >
+                      {isFetchingIssue ? <Spinner /> : 'Fetch'}
+                    </Button>
+                  </div>
+                  {issueTitle && (
+                    <>
+                      <p className="text-xs text-copilot-accent truncate mt-2" title={issueTitle}>
+                        Issue: {issueTitle}
+                      </p>
+                      <label className="flex items-center gap-2 cursor-pointer mt-2">
+                        <input
+                          type="checkbox"
+                          checked={autoStart}
+                          onChange={(e) => setAutoStart(e.target.checked)}
+                          className="w-4 h-4 accent-copilot-accent"
+                          disabled={isCreating}
+                        />
+                        <span className="text-sm text-copilot-text">
+                          Start working immediately
+                        </span>
+                      </label>
+                      
+                      {autoStart && (
+                        <div className="mt-2 ml-6">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <RalphIcon size={18} />
+                            <input
+                              type="checkbox"
+                              checked={useRalphWiggum}
+                              onChange={(e) => setUseRalphWiggum(e.target.checked)}
+                              className="w-4 h-4 accent-copilot-warning"
+                              disabled={isCreating}
+                            />
+                            <span className="text-sm text-copilot-text">
+                              Ralph Wiggum loop
+                            </span>
+                            {useRalphWiggum && (
+                              <span className="flex items-center gap-1 ml-2">
+                                <input
+                                  type="number"
+                                  value={ralphMaxIterations}
+                                  onChange={(e) => setRalphMaxIterations(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                                  className="w-14 bg-copilot-bg border border-copilot-border rounded px-2 py-0.5 text-xs text-copilot-text"
+                                  min={1}
+                                  max={100}
+                                  disabled={isCreating}
+                                />
+                                <span className="text-xs text-copilot-text-muted">iterations</span>
+                              </span>
+                            )}
+                          </label>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
               )}
             </div>
-
-            {issueTitle && (
-              <div className="mb-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoStart}
-                    onChange={(e) => setAutoStart(e.target.checked)}
-                    className="w-4 h-4 accent-copilot-accent"
-                    disabled={isCreating}
-                  />
-                  <span className="text-sm text-copilot-text">
-                    Start working immediately
-                  </span>
-                </label>
-                <p className="text-xs text-copilot-text-muted mt-1 ml-6">
-                  Automatically starts with the issue context. Pre-approves GitHub web fetches and file edits.
-                </p>
-              </div>
-            )}
 
             <div className="mb-4">
               <label className="block text-xs text-copilot-text-muted mb-1">
@@ -222,7 +263,7 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
                 disabled={isCreating}
               />
               <p className="text-xs text-copilot-text-muted mt-1">
-                If branch exists, it will be checked out. Otherwise, a new branch will be created.
+                Creates a new branch if it doesn't exist.
               </p>
             </div>
 
