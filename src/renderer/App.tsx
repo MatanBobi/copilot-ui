@@ -2615,6 +2615,19 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         if (commitAction === 'push') {
           setCommitAction('merge');
         }
+        // Still check if main is ahead even when no files to commit
+        try {
+          const mainAheadResult = await mainAheadPromise;
+          if (mainAheadResult.success && mainAheadResult.isAhead) {
+            setMainAheadInfo({ 
+              isAhead: true, 
+              commits: mainAheadResult.commits,
+              targetBranch: mainAheadResult.targetBranch
+            });
+          }
+        } catch {
+          // Ignore errors checking main ahead
+        }
         return;
       }
 
