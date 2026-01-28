@@ -1993,6 +1993,19 @@ ipcMain.handle('copilot:closeSession', async (_event, sessionId: string) => {
   return { success: true, remainingSessions: sessions.size }
 })
 
+// Delete a session from history (permanently removes session files)
+ipcMain.handle('copilot:deleteSessionFromHistory', async (_event, sessionId: string) => {
+  try {
+    const client = await getClientForCwd(process.cwd())
+    await client.deleteSession(sessionId)
+    console.log(`Deleted session ${sessionId} from history`)
+    return { success: true }
+  } catch (error) {
+    console.error(`Failed to delete session ${sessionId}:`, error)
+    return { success: false, error: String(error) }
+  }
+})
+
 // Switch active session
 ipcMain.handle('copilot:switchSession', async (_event, sessionId: string) => {
   if (!sessions.has(sessionId)) {
