@@ -257,14 +257,26 @@ export const SessionHistory: React.FC<SessionHistoryProps> = ({
                             <span className="text-sm text-copilot-text truncate font-medium">
                               {session.name || `Session ${session.sessionId.slice(0, 8)}...`}
                             </span>
+                            <span className="flex-1" />
                             {session.isActive ? (
                               <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${isCurrentSession ? 'bg-copilot-accent/20 text-copilot-accent' : 'bg-copilot-success/20 text-copilot-success'}`}>
                                 {isCurrentSession ? 'current' : 'active'}
                               </span>
                             ) : (
-                              <span className="text-xs text-copilot-text-muted shrink-0">
-                                {formatRelativeTime(session.modifiedTime)}
-                              </span>
+                              <>
+                                <span className="text-xs text-copilot-text-muted shrink-0 group-hover:hidden">
+                                  {formatRelativeTime(session.modifiedTime)}
+                                </span>
+                                <button
+                                  onClick={(e) => handleDeleteClick(e, session)}
+                                  className="hidden group-hover:flex items-center text-copilot-text-muted hover:text-copilot-error transition-colors shrink-0"
+                                  title="Delete session from history"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </>
                             )}
                           </div>
                           
@@ -275,19 +287,6 @@ export const SessionHistory: React.FC<SessionHistoryProps> = ({
                             </span>
                           )}
                         </div>
-
-                        {/* Delete Button - only for non-active sessions */}
-                        {!session.isActive && (
-                          <button
-                            onClick={(e) => handleDeleteClick(e, session)}
-                            className="shrink-0 p-1 text-copilot-text-muted hover:text-copilot-error opacity-0 group-hover:opacity-100 transition-all"
-                            title="Delete session from history"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )}
                       </div>
                     )
                   })}
