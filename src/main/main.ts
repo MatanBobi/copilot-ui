@@ -3232,3 +3232,81 @@ ipcMain.handle('pty:exists', async (_event, sessionId: string) => {
   return { exists: ptyManager.hasPty(sessionId) }
 })
 
+// File operations - read file content for preview
+const MAX_FILE_SIZE = 1024 * 1024 // 1MB limit for preview
+const BINARY_CHECK_SIZE = 8000 // Check first 8KB for binary content
+
+function isBinaryContent(buffer: Buffer): boolean {
+  // Check for null bytes which indicate binary content
+  for (let i = 0; i < Math.min(buffer.length, BINARY_CHECK_SIZE); i++) {
+    if (buffer[i] === 0) return true
+  }
+  return false
+}
+
+ipcMain.handle('file:readContent', async (_event, filePath: string) => {
+  try {
+    // Check if file exists
+    if (!existsSync(filePath)) {
+      return { success: false, error: 'File not found', errorType: 'not_found' }
+    }
+
+    // Get file stats
+    const stats = statSync(filePath)
+    const fileSize = stats.size
+
+    // Check file size
+    if (fileSize > MAX_FILE_SIZE) {
+      return { 
+        success: false, 
+        error: `File is too large to preview (${(fileSize / 1024 / 1024).toFixed(2)} MB). Maximum size is 1 MB.`,
+        errorType: 'too_large',
+        fileSize
+      }
+    }
+
+    // Read file content
+    const buffer = readFileSync(filePath)
+
+    // Check if binary
+    if (isBinaryContent(buffer)) {
+      return { 
+        success: false, 
+        error: 'This file appears to be binary and cannot be displayed as text.',
+        errorType: 'binary',
+        fileSize
+      }
+    }
+
+    // Return content as string
+    const content = buffer.toString('utf-8')
+    return { 
+      success: true, 
+      content, 
+      fileSize,
+      fileName: filePath.split('/').pop() || filePath
+    }
+  } catch (error) {
+    console.error('Failed to read file:', error)
+    return { 
+      success: false, 
+      error: `Failed to read file: ${String(error)}`,
+      errorType: 'read_error'
+    }
+  }
+})
+
+// File operations - reveal file in system file explorer
+ipcMain.handle('file:revealInFinder', async (_event, filePath: string) => {
+  try {
+    if (!existsSync(filePath)) {
+      return { success: false, error: 'File not found' }
+    }
+    shell.showItemInFolder(filePath)
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to reveal file:', error)
+    return { success: false, error: String(error) }
+  }
+})
+

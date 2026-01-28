@@ -40,6 +40,7 @@ import {
   ChoiceSelector,
   PaperclipIcon,
   SessionHistory,
+  FilePreviewModal,
 } from "./components";
 import {
   Status,
@@ -88,6 +89,7 @@ const App: React.FC = () => {
   const [addCommandScope, setAddCommandScope] = useState<"session" | "global">("session");
   const [addCommandValue, setAddCommandValue] = useState("");
   const [showEditedFiles, setShowEditedFiles] = useState(false);
+  const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null);
   const [showCommitModal, setShowCommitModal] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
@@ -4012,10 +4014,11 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                       activeTab.editedFiles.map((filePath) => {
                         const isConflicted = conflictedFiles.some(cf => filePath.endsWith(cf) || cf.endsWith(filePath.split('/').pop() || ''));
                         return (
-                          <div
+                          <button
                             key={filePath}
-                            className={`flex items-center gap-2 px-3 py-1 text-[10px] hover:bg-copilot-surface ${isConflicted ? 'text-copilot-error' : 'text-copilot-text-muted'}`}
-                            title={isConflicted ? `${filePath} (conflict)` : filePath}
+                            onClick={() => setFilePreviewPath(filePath)}
+                            className={`w-full flex items-center gap-2 px-3 py-1 text-[10px] hover:bg-copilot-surface cursor-pointer text-left ${isConflicted ? 'text-copilot-error' : 'text-copilot-text-muted'}`}
+                            title={isConflicted ? `${filePath} (conflict) - Click to preview` : `${filePath} - Click to preview`}
                           >
                             <FileIcon
                               size={8}
@@ -4025,7 +4028,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                               {filePath.split("/").pop()}
                             </span>
                             {isConflicted && <span className="text-[8px] text-copilot-error">!</span>}
-                          </div>
+                          </button>
                         );
                       })
                     )}
@@ -4883,6 +4886,13 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
           </div>
         </div>
       )}
+
+      {/* File Preview Modal */}
+      <FilePreviewModal
+        isOpen={!!filePreviewPath}
+        onClose={() => setFilePreviewPath(null)}
+        filePath={filePreviewPath || ''}
+      />
     </div>
   );
 };

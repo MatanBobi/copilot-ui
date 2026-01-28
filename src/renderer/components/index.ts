@@ -2,6 +2,7 @@
 export * from './Button'
 export * from './ChoiceSelector'
 export * from './Dropdown'
+export * from './FilePreviewModal'
 export * from './IconButton'
 export * from './Icons'
 export * from './Modal'

@@ -406,6 +406,22 @@ const electronAPI = {
       ipcRenderer.on('pty:exit', handler)
       return () => ipcRenderer.removeListener('pty:exit', handler)
     }
+  },
+  // File operations
+  file: {
+    readContent: (filePath: string): Promise<{ 
+      success: boolean
+      content?: string
+      fileSize?: number
+      fileName?: string
+      error?: string
+      errorType?: 'not_found' | 'too_large' | 'binary' | 'read_error'
+    }> => {
+      return ipcRenderer.invoke('file:readContent', filePath)
+    },
+    revealInFinder: (filePath: string): Promise<{ success: boolean; error?: string }> => {
+      return ipcRenderer.invoke('file:revealInFinder', filePath)
+    }
   }
 }
 
