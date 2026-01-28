@@ -285,6 +285,21 @@ export const SessionHistory: React.FC<SessionHistoryProps> = ({
       if (result.success) {
         setSuccessMessage('Worktree removed successfully')
         setTimeout(() => setSuccessMessage(null), 3000)
+        // Refresh worktree list to remove the deleted session
+        const refreshResult = await window.electronAPI.worktree.listSessions()
+        if (refreshResult?.sessions) {
+          const map = new Map<string, PreviousSession['worktree']>()
+          refreshResult.sessions.forEach((wt: { id: string; branch: string; worktreePath: string; status: 'active' | 'idle' | 'orphaned'; diskUsage?: string }) => {
+            map.set(wt.worktreePath, {
+              id: wt.id,
+              branch: wt.branch,
+              worktreePath: wt.worktreePath,
+              status: wt.status,
+              diskUsage: wt.diskUsage,
+            })
+          })
+          setWorktreeMap(map)
+        }
       } else {
         setError(result.error || 'Failed to remove worktree')
       }
