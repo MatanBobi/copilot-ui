@@ -327,6 +327,73 @@ pwd`
       expect(result).not.toContain('do')
       expect(result).not.toContain('done')
       expect(result).not.toContain('true')
+      expect(result).not.toContain('f')
+    })
+
+    it('excludes loop variable from for loops with command substitution - Issue #102', () => {
+      const command = 'for f in $(ls -t ~/.copilot/session-state/*/events.jsonl 2>/dev/null | head -5); do echo "=== $f ==="; grep "compaction" "$f" 2>/dev/null | tail -3; done'
+      const result = extractExecutables(command)
+      // Note: ls is inside $(...) which gets stripped as a string literal, so only the loop body commands are extracted
+      expect(result).toContain('head')
+      expect(result).toContain('echo')
+      expect(result).toContain('grep')
+      expect(result).toContain('tail')
+      expect(result).not.toContain('for')
+      expect(result).not.toContain('in')
+      expect(result).not.toContain('do')
+      expect(result).not.toContain('done')
+      // This is the main bug fix - 'f' should not be extracted as a command
+      expect(result).not.toContain('f')
+    })
+
+    it('excludes loop variable from multiline for loops - Issue #102', () => {
+      const command = `for f in $(ls -t ~/.copilot/session-state/*/events.jsonl 2>/dev/null | head -10); do
+compaction=$(grep -c "compaction" "$f" 2>/dev/null || echo 0)
+if [ "$compaction" -gt "0" ]; then
+echo "=== $f (compactions: $compaction) ==="
+grep "compaction_complete" "$f" 2>/dev/null | jq -r '.data.success // "N/A"' 2>/dev/null | sort | uniq -c
+fi
+done`
+      const result = extractExecutables(command)
+      expect(result).toContain('head')
+      expect(result).toContain('echo')
+      expect(result).toContain('grep')
+      expect(result).toContain('jq')
+      expect(result).toContain('sort')
+      expect(result).toContain('uniq')
+      // Loop variable 'f' should not be extracted
+      expect(result).not.toContain('f')
+      // Shell keywords should not be extracted
+      expect(result).not.toContain('for')
+      expect(result).not.toContain('in')
+      expect(result).not.toContain('do')
+      expect(result).not.toContain('done')
+      expect(result).not.toContain('if')
+      expect(result).not.toContain('then')
+      expect(result).not.toContain('fi')
+    })
+
+    it('excludes loop variable from for loops with comments - Issue #102', () => {
+      const command = `for f in $(ls -t ~/.copilot/session-state/*/events.jsonl 2>/dev/null | head -20); do
+  # Find compaction with success: null (not true)
+  if grep -q '"session.compaction_complete".*"success":null' "$f" 2>/dev/null; then
+    session=$(basename $(dirname "$f"))
+    echo "=== $session has null compaction ==="
+    # Show last few events
+    tail -5 "$f" | jq -r '.type' 2>/dev/null | head -5
+  fi
+done`
+      const result = extractExecutables(command)
+      expect(result).toContain('head')
+      expect(result).toContain('grep')
+      expect(result).toContain('echo')
+      expect(result).toContain('tail')
+      expect(result).toContain('jq')
+      // Loop variable 'f' should not be extracted
+      expect(result).not.toContain('f')
+      // Words from comments should not be extracted
+      expect(result).not.toContain('Find')
+      expect(result).not.toContain('Show')
     })
 
     it('excludes shell keywords from if statements', () => {

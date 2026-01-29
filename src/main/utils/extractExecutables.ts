@@ -77,6 +77,7 @@ export function extractExecutables(command: string): string[] {
     
     let foundExec: string | null = null
     let subcommand: string | null = null
+    let skipNextAsLoopVar = false
     
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i]
@@ -89,7 +90,18 @@ export function extractExecutables(command: string): string[] {
       // Skip shell builtins like 'true' and 'false' used in || true patterns
       if (SHELL_BUILTINS_TO_SKIP.includes(part)) continue
       // Skip shell keywords like 'for', 'in', 'do', 'done', etc.
-      if (SHELL_KEYWORDS_TO_SKIP.includes(part)) continue
+      // Also track 'for' to skip the loop variable that follows
+      if (SHELL_KEYWORDS_TO_SKIP.includes(part)) {
+        if (part === 'for' || part === 'select') {
+          skipNextAsLoopVar = true
+        }
+        continue
+      }
+      // Skip the loop variable after 'for' or 'select' keywords
+      if (skipNextAsLoopVar) {
+        skipNextAsLoopVar = false
+        continue
+      }
       // Skip empty or punctuation
       if (!part || /^[<>|&;()]+$/.test(part)) continue
       // Skip redirection targets
