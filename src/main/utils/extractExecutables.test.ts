@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractExecutables, containsDestructiveCommand, getDestructiveExecutables, isDestructiveExecutable } from './extractExecutables'
+import { extractExecutables, containsDestructiveCommand, getDestructiveExecutables, isDestructiveExecutable, extractFilesToDelete } from './extractExecutables'
 
 describe('extractExecutables', () => {
   describe('basic commands', () => {
@@ -454,6 +454,76 @@ pwd`
       it('returns empty array for safe commands', () => {
         expect(getDestructiveExecutables('ls -la')).toEqual([])
       })
+    })
+  })
+
+  describe('extractFilesToDelete - Issue #101', () => {
+    it('extracts single file from rm', () => {
+      expect(extractFilesToDelete('rm file.txt')).toEqual(['file.txt'])
+    })
+
+    it('extracts multiple files from rm', () => {
+      expect(extractFilesToDelete('rm file1.txt file2.txt')).toEqual(['file1.txt', 'file2.txt'])
+    })
+
+    it('ignores flags with rm', () => {
+      expect(extractFilesToDelete('rm -rf /tmp/test')).toEqual(['/tmp/test'])
+    })
+
+    it('handles multiple flags', () => {
+      expect(extractFilesToDelete('rm -r -f /tmp/test')).toEqual(['/tmp/test'])
+    })
+
+    it('handles combined flags', () => {
+      expect(extractFilesToDelete('rm -rf dir1 dir2')).toEqual(['dir1', 'dir2'])
+    })
+
+    it('handles rmdir', () => {
+      expect(extractFilesToDelete('rmdir /tmp/empty')).toEqual(['/tmp/empty'])
+    })
+
+    it('handles unlink', () => {
+      expect(extractFilesToDelete('unlink /tmp/link')).toEqual(['/tmp/link'])
+    })
+
+    it('handles shred', () => {
+      expect(extractFilesToDelete('shred -u secret.txt')).toEqual(['secret.txt'])
+    })
+
+    it('handles quoted paths with spaces', () => {
+      expect(extractFilesToDelete('rm "file with spaces.txt"')).toEqual(['file with spaces.txt'])
+    })
+
+    it('handles single-quoted paths', () => {
+      expect(extractFilesToDelete("rm 'my file.txt'")).toEqual(['my file.txt'])
+    })
+
+    it('handles sudo prefix', () => {
+      expect(extractFilesToDelete('sudo rm -rf /etc/test')).toEqual(['/etc/test'])
+    })
+
+    it('handles chained rm commands', () => {
+      expect(extractFilesToDelete('rm file1.txt && rm file2.txt')).toEqual(['file1.txt', 'file2.txt'])
+    })
+
+    it('extracts from multiple commands with semicolon', () => {
+      expect(extractFilesToDelete('rm file1.txt; rm file2.txt')).toEqual(['file1.txt', 'file2.txt'])
+    })
+
+    it('returns empty array for non-rm commands', () => {
+      expect(extractFilesToDelete('ls -la')).toEqual([])
+    })
+
+    it('handles glob patterns', () => {
+      expect(extractFilesToDelete('rm *.tmp')).toEqual(['*.tmp'])
+    })
+
+    it('handles paths with special characters', () => {
+      expect(extractFilesToDelete('rm /tmp/test-file_v1.2.3.txt')).toEqual(['/tmp/test-file_v1.2.3.txt'])
+    })
+
+    it('handles escaped spaces', () => {
+      expect(extractFilesToDelete('rm my\\ file.txt')).toEqual(['my file.txt'])
     })
   })
 })

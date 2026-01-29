@@ -71,6 +71,8 @@ export interface PendingConfirmation {
   toolTitle?: string;
   isOutOfScope?: boolean; // True if reading outside session's cwd
   content?: string; // File content for write/create operations
+  isDestructive?: boolean; // True if command is destructive (rm, shred, etc.)
+  filesToDelete?: string[]; // Files that will be deleted by destructive commands
   [key: string]: unknown;
 }
 

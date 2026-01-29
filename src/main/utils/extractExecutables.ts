@@ -220,3 +220,94 @@ export function getDestructiveExecutables(command: string): string[] {
   
   return destructive
 }
+
+/**
+ * Extract the file/directory paths that will be deleted by rm commands.
+ * Handles rm, rmdir, unlink, and shred commands.
+ * Returns an array of file paths that the command targets.
+ */
+export function extractFilesToDelete(command: string): string[] {
+  const files: string[] = []
+  
+  // Split command by shell operators to handle chained commands
+  const segments = command.split(/[;&|\n]+/)
+  
+  for (const segment of segments) {
+    const trimmed = segment.trim()
+    if (!trimmed) continue
+    
+    // Parse rm, rmdir, unlink, shred commands
+    // Match patterns like: rm file, rm -rf dir, sudo rm file, etc.
+    const rmMatch = trimmed.match(/(?:^|(?:sudo|env|nohup|nice|time|command)\s+)*(rm|rmdir|unlink|shred)(?:\s|$)(.*)/)
+    if (!rmMatch) continue
+    
+    const args = rmMatch[2].trim()
+    if (!args) continue
+    
+    // Parse the arguments, handling quoted strings and flags
+    const tokens = tokenizeShellArgs(args)
+    
+    for (const token of tokens) {
+      // Skip flags (anything starting with -)
+      if (token.startsWith('-')) continue
+      // Skip empty tokens
+      if (!token.trim()) continue
+      // This is a file/directory path
+      files.push(token)
+    }
+  }
+  
+  return files
+}
+
+/**
+ * Tokenize shell arguments, handling quoted strings.
+ */
+function tokenizeShellArgs(args: string): string[] {
+  const tokens: string[] = []
+  let current = ''
+  let inSingleQuote = false
+  let inDoubleQuote = false
+  let escaped = false
+  
+  for (let i = 0; i < args.length; i++) {
+    const char = args[i]
+    
+    if (escaped) {
+      current += char
+      escaped = false
+      continue
+    }
+    
+    if (char === '\\' && !inSingleQuote) {
+      escaped = true
+      continue
+    }
+    
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote
+      continue
+    }
+    
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote
+      continue
+    }
+    
+    if (char === ' ' && !inSingleQuote && !inDoubleQuote) {
+      if (current) {
+        tokens.push(current)
+        current = ''
+      }
+      continue
+    }
+    
+    current += char
+  }
+  
+  if (current) {
+    tokens.push(current)
+  }
+  
+  return tokens
+}

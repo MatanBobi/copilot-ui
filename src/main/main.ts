@@ -9,7 +9,7 @@ const execAsync = promisify(exec)
 import { CopilotClient, CopilotSession, PermissionRequest, PermissionRequestResult, Tool } from '@github/copilot-sdk'
 import Store from 'electron-store'
 import log from 'electron-log/main'
-import { extractExecutables, containsDestructiveCommand, getDestructiveExecutables } from './utils/extractExecutables'
+import { extractExecutables, containsDestructiveCommand, getDestructiveExecutables, extractFilesToDelete } from './utils/extractExecutables'
 import * as worktree from './worktree'
 import * as ptyManager from './pty'
 import * as browserManager from './browser'
@@ -774,9 +774,10 @@ async function handlePermissionRequest(
     // Check for destructive commands - these NEVER get auto-approved (Issue #65)
     const isDestructive = containsDestructiveCommand(commandText)
     const destructiveExecutables = isDestructive ? getDestructiveExecutables(commandText) : []
+    const filesToDelete = isDestructive ? extractFilesToDelete(commandText) : []
     
     if (isDestructive) {
-      console.log(`[${ourSessionId}] DESTRUCTIVE command detected:`, destructiveExecutables)
+      console.log(`[${ourSessionId}] DESTRUCTIVE command detected:`, destructiveExecutables, 'Files:', filesToDelete)
       
       if (!mainWindow || mainWindow.isDestroyed()) {
         return { kind: 'denied-no-approval-rule-and-could-not-request-from-user' }
@@ -793,6 +794,7 @@ async function handlePermissionRequest(
           allExecutables: executables,
           isOutOfScope: false,
           isDestructive: true,  // Flag for UI to show warning
+          filesToDelete,  // Issue #101: Show which files will be deleted
           ...request
         })
         bounceDock()

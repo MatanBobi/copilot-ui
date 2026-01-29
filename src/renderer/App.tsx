@@ -3961,12 +3961,18 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
               const pendingConfirmation = activeTab.pendingConfirmations[0];
               const queueLength = activeTab.pendingConfirmations.length;
               return (
-                <div className="shrink-0 mx-3 mb-2 p-4 bg-copilot-surface rounded-lg border border-copilot-warning">
+                <div className={`shrink-0 mx-3 mb-2 p-4 bg-copilot-surface rounded-lg border ${pendingConfirmation.isDestructive ? 'border-copilot-error' : 'border-copilot-warning'}`}>
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-copilot-warning text-lg">⚠️</span>
+                    <span className={`${pendingConfirmation.isDestructive ? 'text-copilot-error' : 'text-copilot-warning'} text-lg`}>
+                      {pendingConfirmation.isDestructive ? '🗑️' : '⚠️'}
+                    </span>
                     <span className="text-copilot-text text-sm font-medium">
                       {pendingConfirmation.isOutOfScope ? (
                         <>Allow reading outside workspace?</>
+                      ) : pendingConfirmation.isDestructive ? (
+                        <>
+                          Allow <strong className="text-copilot-error">{pendingConfirmation.executable || "destructive command"}</strong>?
+                        </>
                       ) : pendingConfirmation.kind === "write" ? (
                         <>Allow file changes?</>
                       ) : pendingConfirmation.kind === "shell" ? (
@@ -4042,6 +4048,21 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                       <code>{pendingConfirmation.fullCommandText}</code>
                     </pre>
                   )}
+                  {/* Issue #101: Show files to be deleted for destructive commands */}
+                  {pendingConfirmation.isDestructive && pendingConfirmation.filesToDelete && pendingConfirmation.filesToDelete.length > 0 && (
+                    <div className="bg-copilot-error/10 border border-copilot-error/30 rounded p-3 my-2">
+                      <div className="text-xs font-medium text-copilot-error mb-2 flex items-center gap-1">
+                        🗑️ Files to be deleted:
+                      </div>
+                      <ul className="text-xs text-copilot-error font-mono space-y-1 max-h-24 overflow-y-auto">
+                        {pendingConfirmation.filesToDelete.map((file, idx) => (
+                          <li key={idx} className="truncate" title={file}>
+                            • {file}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div className="flex gap-2 mt-3">
                     {pendingConfirmation.isOutOfScope ? (
                       <>
@@ -4108,8 +4129,8 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                               >
                                 {allowMode === "session" && "✓ "}Session
                               </button>
-                              {/* Hide Global option for file changes (write kind) */}
-                              {pendingConfirmation.kind !== "write" && (
+                              {/* Hide Global option for file changes (write kind) and destructive commands (Issue #101) */}
+                              {pendingConfirmation.kind !== "write" && !pendingConfirmation.isDestructive && (
                                 <button
                                   onClick={() => {
                                     setAllowMode("global");
