@@ -350,12 +350,30 @@ async function repairDuplicateToolResults(sessionId: string): Promise<boolean> {
       }
     }
     
-    // Also check for actual duplicate tool.execution_complete events
+    // Track all tool.execution_start events
+    const startedToolCalls = new Set<string>()
+    for (let i = 0; i < events.length; i++) {
+      const event = events[i]
+      if (event.type === 'tool.execution_start' && event.data?.toolCallId) {
+        startedToolCalls.add(event.data.toolCallId)
+      }
+    }
+    
+    // Check for orphaned tool.execution_complete events (no corresponding start - can happen after compaction)
     const completedToolCalls = new Map<string, number>() // toolCallId -> line index
     for (let i = 0; i < events.length; i++) {
       const event = events[i]
       if (event.type === 'tool.execution_complete' && event.data?.toolCallId) {
         const toolCallId = event.data.toolCallId
+        
+        // Check if this tool_result has no corresponding tool_use (orphaned after compaction)
+        if (!startedToolCalls.has(toolCallId)) {
+          log.info(`[${sessionId}] Found orphaned tool_result for ${toolCallId} (no matching tool_use, likely compaction corruption)`)
+          linesToRemove.add(i)
+          continue // Don't also check for duplicates
+        }
+        
+        // Check for duplicate tool_result events
         if (completedToolCalls.has(toolCallId)) {
           // Duplicate! Keep the later one (more likely to have actual result)
           linesToRemove.add(completedToolCalls.get(toolCallId)!)
@@ -493,9 +511,12 @@ async function resumeDisconnectedSession(sessionId: string, sessionState: Sessio
       log.info(`[${sessionId}] Session error:`, event.data)
       const errorMessage = event.data?.message || JSON.stringify(event.data)
       
-      // Auto-repair duplicate tool_result errors
-      if (errorMessage.includes('multiple `tool_result` blocks') || errorMessage.includes('each tool_use must have a single result')) {
-        log.info(`[${sessionId}] Detected duplicate tool_result error, attempting auto-repair...`)
+      // Auto-repair tool_result errors (duplicate or orphaned after compaction)
+      if (errorMessage.includes('multiple `tool_result` blocks') || 
+          errorMessage.includes('each tool_use must have a single result') ||
+          errorMessage.includes('unexpected `tool_use_id`') ||
+          errorMessage.includes('Each `tool_result` block must have a corresponding `tool_use`')) {
+        log.info(`[${sessionId}] Detected tool_result corruption error, attempting auto-repair...`)
         repairDuplicateToolResults(sessionId).then(repaired => {
           if (repaired) {
             mainWindow?.webContents.send('copilot:error', { 
@@ -1084,9 +1105,12 @@ Browser tools available: browser_navigate, browser_click, browser_fill, browser_
       console.log(`[${sessionId}] Session error:`, event.data)
       const errorMessage = event.data?.message || JSON.stringify(event.data)
       
-      // Auto-repair duplicate tool_result errors
-      if (errorMessage.includes('multiple `tool_result` blocks') || errorMessage.includes('each tool_use must have a single result')) {
-        log.info(`[${sessionId}] Detected duplicate tool_result error, attempting auto-repair...`)
+      // Auto-repair tool_result errors (duplicate or orphaned after compaction)
+      if (errorMessage.includes('multiple `tool_result` blocks') || 
+          errorMessage.includes('each tool_use must have a single result') ||
+          errorMessage.includes('unexpected `tool_use_id`') ||
+          errorMessage.includes('Each `tool_result` block must have a corresponding `tool_use`')) {
+        log.info(`[${sessionId}] Detected tool_result corruption error, attempting auto-repair...`)
         repairDuplicateToolResults(sessionId).then(repaired => {
           if (repaired) {
             mainWindow?.webContents.send('copilot:error', { 
@@ -2948,6 +2972,34 @@ ipcMain.handle('copilot:resumePreviousSession', async (_event, sessionId: string
         input: event.data.arguments || event.data.input || (event.data as Record<string, unknown>),
         output: event.data.output
       })
+    } else if (event.type === 'tool.confirmation_requested') {
+      console.log(`[${sessionId}] Confirmation requested:`, event.data)
+      mainWindow.webContents.send('copilot:confirm', { sessionId, ...event.data })
+    } else if (event.type === 'session.error') {
+      console.log(`[${sessionId}] Session error:`, event.data)
+      const errorMessage = event.data?.message || JSON.stringify(event.data)
+      
+      // Auto-repair tool_result errors (duplicate or orphaned after compaction)
+      if (errorMessage.includes('multiple `tool_result` blocks') || 
+          errorMessage.includes('each tool_use must have a single result') ||
+          errorMessage.includes('unexpected `tool_use_id`') ||
+          errorMessage.includes('Each `tool_result` block must have a corresponding `tool_use`')) {
+        log.info(`[${sessionId}] Detected tool_result corruption error, attempting auto-repair...`)
+        repairDuplicateToolResults(sessionId).then(repaired => {
+          if (repaired) {
+            mainWindow?.webContents.send('copilot:error', { 
+              sessionId, 
+              message: 'Session repaired. Please resend your last message.',
+              isRepaired: true
+            })
+          } else {
+            mainWindow?.webContents.send('copilot:error', { sessionId, message: errorMessage })
+          }
+        })
+        return
+      }
+      
+      mainWindow.webContents.send('copilot:error', { sessionId, message: errorMessage })
     } else if (event.type === 'session.usage_info') {
       mainWindow.webContents.send('copilot:usageInfo', { 
         sessionId,
