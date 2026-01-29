@@ -77,6 +77,7 @@ import {
 } from "./utils/session";
 import { playNotificationSound } from "./utils/sound";
 import { LONG_OUTPUT_LINE_THRESHOLD } from "./utils/cliOutputCompression";
+import { isAsciiDiagram, extractTextContent } from "./utils/isAsciiDiagram";
 import { useClickOutside } from "./hooks";
 import buildInfo from "./build-info.json";
 
@@ -630,6 +631,54 @@ const App: React.FC = () => {
     prevActiveTabIdRef.current = activeTabIdRef.current;
     activeTabIdRef.current = activeTabId;
   }, [activeTabId]);
+
+  // Expose test helpers for E2E testing (only when __ENABLE_TEST_HELPERS__ is set by test runner)
+  useEffect(() => {
+    // Check if test mode is enabled (set by Playwright before app loads)
+    if ((window as any).__ENABLE_TEST_HELPERS__) {
+      (window as any).__TEST_HELPERS__ = {
+        setTabs,
+        setActiveTabId,
+        getTabs: () => tabs,
+        getActiveTab: () => tabs.find(t => t.id === activeTabId),
+        injectMessages: (messages: Message[]) => {
+          setTabs(prev => {
+            if (prev.length === 0) {
+              // Create a new tab with the messages
+              return [{
+                id: 'test-tab-1',
+                name: 'Test Conversation',
+                messages,
+                model: 'gpt-4',
+                cwd: '/tmp/test',
+                isProcessing: false,
+                activeTools: [],
+                hasUnreadCompletion: false,
+                pendingConfirmations: [],
+                needsTitle: false,
+                alwaysAllowed: [],
+                editedFiles: [],
+                currentIntent: null,
+                currentIntentTimestamp: null,
+                gitBranchRefresh: 0,
+              }];
+            }
+            return prev.map((tab, i) => 
+              i === 0 ? { ...tab, messages } : tab
+            );
+          });
+          if (!activeTabId) {
+            setActiveTabId('test-tab-1');
+          }
+        }
+      };
+    }
+    return () => {
+      if ((window as any).__ENABLE_TEST_HELPERS__) {
+        delete (window as any).__TEST_HELPERS__;
+      }
+    };
+  }, [tabs, activeTabId]);
 
   // Focus input when active tab changes
   useEffect(() => {
@@ -3820,18 +3869,34 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                               <li className="ml-2">{children}</li>
                             ),
                             code: ({ children, className }) => {
-                              const isBlock = className?.includes("language-");
-                              return isBlock ? (
-                                <pre className="bg-copilot-bg rounded p-2 my-2 overflow-x-auto text-xs max-w-full">
-                                  <code className="text-copilot-text">
+                              // Extract text content for analysis
+                              const textContent = extractTextContent(children);
+                              
+                              // Fix block detection: treat as block if:
+                              // 1. Has language class (e.g., language-javascript)
+                              // 2. OR contains newlines (multi-line content)
+                              const hasLanguageClass = className?.includes("language-");
+                              const isMultiLine = textContent.includes('\n');
+                              const isBlock = hasLanguageClass || isMultiLine;
+                              
+                              // Check if content is an ASCII diagram
+                              const isDiagram = isAsciiDiagram(textContent);
+                              
+                              if (isBlock) {
+                                return (
+                                  <pre className={`bg-copilot-bg rounded p-2 my-2 overflow-x-auto text-xs max-w-full ${isDiagram ? 'ascii-diagram' : ''}`}>
+                                    <code className="text-copilot-text">
+                                      {children}
+                                    </code>
+                                  </pre>
+                                );
+                              } else {
+                                return (
+                                  <code className="bg-copilot-bg px-1 py-0.5 rounded text-copilot-warning text-xs break-all">
                                     {children}
                                   </code>
-                                </pre>
-                              ) : (
-                                <code className="bg-copilot-bg px-1 py-0.5 rounded text-copilot-warning text-xs break-all">
-                                  {children}
-                                </code>
-                              );
+                                );
+                              }
                             },
                             pre: ({ children }) => (
                               <div className="overflow-x-auto max-w-full">

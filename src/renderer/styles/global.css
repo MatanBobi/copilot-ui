@@ -231,3 +231,34 @@ button,
   font-display: swap;
   src: local('JetBrains Mono SemiBold'), local('JetBrainsMono-SemiBold');
 }
+
+/* ASCII Diagram Styling
+ * Optimized for proper display of box-drawing characters and ASCII art.
+ * Uses a monospace font stack with good Unicode box-drawing support
+ * and tight line-height for proper vertical alignment.
+ */
+.ascii-diagram {
+  /* Font stack prioritizing fonts with good box-drawing character support */
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Cascadia Code', 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', monospace !important;
+  
+  /* Tight line-height ensures vertical lines (│) align across rows */
+  line-height: 1.2 !important;
+  
+  /* Zero letter-spacing prevents gaps in horizontal lines (─) */
+  letter-spacing: 0 !important;
+  
+  /* Preserve exact whitespace for proper alignment */
+  white-space: pre !important;
+  
+  /* Prevent any text rendering optimizations that might affect alignment */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  
+  /* Ensure consistent sizing */
+  font-size: inherit;
+  
+  /* Prevent word wrapping which would break diagrams */
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
