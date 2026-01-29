@@ -2975,7 +2975,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         const userMessage: Message = {
           id: generateId(),
           role: "user",
-          content: promptToSend,
+          content: initialPrompt, // Show original prompt in UI, not the expanded Lisa/Ralph instructions
         };
 
         // Update tab with the initial message and start processing
