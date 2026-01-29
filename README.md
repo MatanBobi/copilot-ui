@@ -68,7 +68,10 @@ cd copilot-ui
 .\scripts\setup-windows.ps1
 ```
 
-This will install all Windows prerequisites automatically. After running, **restart your terminal** and proceed with `npm install`.
+> **Note:** If you get a parse error, run with: `pwsh -NoProfile -File .\scripts\setup-windows.ps1`  
+> (This bypasses PowerShell profile scripts that may interfere with parsing)
+
+This will install all Windows prerequisites and npm dependencies automatically. After running, you're ready to go with `npm run dev`!
 
 <details>
 <summary><b>Manual Windows Setup (if automated script fails)</b></summary>
@@ -127,11 +130,8 @@ Drag "Copilot Skins" to your Applications folder and you're ready to go!
 git clone https://github.com/idofrizler/copilot-ui.git
 cd copilot-ui
 
-# Run Windows setup script (first time only)
+# Run Windows setup script (installs prerequisites and dependencies)
 .\scripts\setup-windows.ps1
-
-# Restart terminal, then install dependencies
-npm install
 
 # Build the installer
 npm run dist:win

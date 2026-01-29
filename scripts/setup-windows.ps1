@@ -72,7 +72,10 @@ if (Test-Path $vsBuildTools) {
     
     # Check for Spectre libraries
     Write-Host "Ensuring Spectre-mitigated libraries are installed..." -ForegroundColor Yellow
-    & "$vsBuildTools\..\Installer\vs_installer.exe" modify --installPath $vsBuildTools --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre --quiet --norestart --wait
+    $vsInstaller = Join-Path (Split-Path $vsBuildTools) "Installer\vs_installer.exe"
+    if (Test-Path $vsInstaller) {
+        & $vsInstaller modify --installPath $vsBuildTools --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre --quiet --norestart --wait
+    }
     Write-Host "✓ Spectre libraries verified" -ForegroundColor Green
 } else {
     Write-Host "Visual Studio Build Tools not found. Installing..." -ForegroundColor Yellow
@@ -84,8 +87,20 @@ if (Test-Path $vsBuildTools) {
 Write-Host ""
 Write-Host "=== Setup Complete ===" -ForegroundColor Green
 Write-Host ""
-Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "1. Restart your terminal (or run: refreshenv)" -ForegroundColor White
-Write-Host "2. Run: npm install" -ForegroundColor White
-Write-Host "3. Run: npm run dev" -ForegroundColor White
+
+# Install npm dependencies
+Write-Host "Installing npm dependencies..." -ForegroundColor Yellow
+try {
+    npm install
+    Write-Host "✓ npm dependencies installed" -ForegroundColor Green
+} catch {
+    Write-Host "✗ Failed to install npm dependencies. You may need to restart your terminal first." -ForegroundColor Red
+    Write-Host "After restarting, run: npm install" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "=== All Done! ===" -ForegroundColor Green
+Write-Host ""
+Write-Host "To start development, run:" -ForegroundColor Cyan
+Write-Host "  npm run dev" -ForegroundColor White
 Write-Host ""
