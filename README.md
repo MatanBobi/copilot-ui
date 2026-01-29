@@ -57,7 +57,7 @@ Click "Add to Message" and the terminal's output buffer gets attached to your ne
 
 Windows requires additional build tools for native modules:
 - **Python 3.x** (for node-gyp)
-- **Visual Studio Build Tools 2022** with C++ workload and Spectre libraries
+- **Visual Studio Build Tools 2022** with C++ workload (Spectre libraries not required - automatically patched)
 - **PowerShell 7+** (for running scripts)
 
 **Quick Setup:** Run our automated setup script (requires [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/)):
@@ -88,7 +88,7 @@ This will install all Windows prerequisites and npm dependencies automatically. 
 
 3. **Install Visual Studio Build Tools:**
    ```powershell
-   winget install Microsoft.VisualStudio.2022.BuildTools --silent --override "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre --includeRecommended"
+   winget install Microsoft.VisualStudio.2022.BuildTools --silent --override "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
    ```
 
 4. **Set PowerShell execution policy:**

@@ -69,18 +69,10 @@ Write-Host "Checking Visual Studio Build Tools..." -ForegroundColor Yellow
 $vsBuildTools = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools"
 if (Test-Path $vsBuildTools) {
     Write-Host "✓ Visual Studio Build Tools 2022 found" -ForegroundColor Green
-    
-    # Check for Spectre libraries
-    Write-Host "Ensuring Spectre-mitigated libraries are installed..." -ForegroundColor Yellow
-    $vsInstaller = Join-Path (Split-Path $vsBuildTools) "Installer\vs_installer.exe"
-    if (Test-Path $vsInstaller) {
-        & $vsInstaller modify --installPath $vsBuildTools --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre --quiet --norestart --wait
-    }
-    Write-Host "✓ Spectre libraries verified" -ForegroundColor Green
 } else {
     Write-Host "Visual Studio Build Tools not found. Installing..." -ForegroundColor Yellow
     Write-Host "This will take several minutes (downloading ~2-3 GB)..." -ForegroundColor Yellow
-    winget install Microsoft.VisualStudio.2022.BuildTools --silent --override "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre --includeRecommended"
+    winget install Microsoft.VisualStudio.2022.BuildTools --silent --override "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
     Write-Host "✓ Visual Studio Build Tools installed" -ForegroundColor Green
 }
 
