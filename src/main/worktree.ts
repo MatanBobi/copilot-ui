@@ -32,6 +32,24 @@ interface GitHubIssue {
   comments?: GitHubIssueComment[]
 }
 
+// Azure DevOps work item types
+interface AzureDevOpsWorkItemComment {
+  body: string
+  user: {
+    login: string
+  }
+  created_at: string
+}
+
+interface AzureDevOpsWorkItem {
+  number: number
+  title: string
+  body: string | null
+  state: string
+  html_url: string
+  comments?: AzureDevOpsWorkItemComment[]
+}
+
 // Session registry types
 interface WorktreeSession {
   id: string                    // Format: <repo-name>--<branch-name>
@@ -778,6 +796,270 @@ export async function fetchGitHubIssue(issueUrl: string): Promise<{
           resolve({ success: true, issue, suggestedBranch })
         } catch (err) {
           resolve({ success: false, error: 'Failed to parse GitHub response' })
+        }
+      })
+    })
+    
+    request.on('error', (error) => {
+      resolve({ success: false, error: `Network error: ${error.message}` })
+    })
+    
+    request.end()
+  })
+}
+
+/**
+ * Parse an Azure DevOps work item URL and extract organization, project, and work item ID
+ */
+function parseAzureDevOpsWorkItemUrl(url: string): { organization: string; project: string; workItemId: number } | null {
+  // Match patterns like:
+  // https://dev.azure.com/organization/project/_workitems/edit/123
+  // dev.azure.com/organization/project/_workitems/edit/123
+  const devAzureMatch = url.match(/(?:https?:\/\/)?dev\.azure\.com\/([^/]+)\/([^/]+)\/_workitems\/edit\/(\d+)/)
+  if (devAzureMatch) {
+    return {
+      organization: devAzureMatch[1],
+      project: devAzureMatch[2],
+      workItemId: parseInt(devAzureMatch[3], 10)
+    }
+  }
+  
+  // Also match visualstudio.com patterns like:
+  // https://organization.visualstudio.com/project/_workitems/edit/123
+  // organization.visualstudio.com/project/_workitems/edit/123
+  const vsMatch = url.match(/(?:https?:\/\/)?([^.]+)\.visualstudio\.com\/([^/]+)\/_workitems\/edit\/(\d+)/)
+  if (vsMatch) {
+    return {
+      organization: vsMatch[1],
+      project: vsMatch[2],
+      workItemId: parseInt(vsMatch[3], 10)
+    }
+  }
+  
+  return null
+}
+
+/**
+ * Fetch comments for an Azure DevOps work item
+ */
+function fetchAzureDevOpsWorkItemComments(organization: string, project: string, workItemId: number): Promise<AzureDevOpsWorkItemComment[]> {
+  const apiUrl = `https://dev.azure.com/${organization}/${project}/_apis/wit/workitems/${workItemId}/comments?api-version=7.0-preview.3`
+  
+  return new Promise((resolve) => {
+    const request = net.request({
+      method: 'GET',
+      url: apiUrl
+    })
+    
+    request.setHeader('Accept', 'application/json')
+    request.setHeader('User-Agent', 'Copilot-UI')
+    
+    let responseBody = ''
+    
+    request.on('response', (response) => {
+      if (response.statusCode !== 200) {
+        // If we can't fetch comments, just return empty array - don't fail the whole request
+        resolve([])
+        return
+      }
+      
+      response.on('data', (chunk) => {
+        responseBody += chunk.toString()
+      })
+      
+      response.on('end', () => {
+        try {
+          const data = JSON.parse(responseBody)
+          // Azure DevOps returns comments in a 'comments' array
+          const comments: AzureDevOpsWorkItemComment[] = (data.comments || []).map((comment: { text: string; createdBy?: { displayName: string }; createdDate?: string }) => ({
+            body: comment.text,
+            user: { login: comment.createdBy?.displayName || 'Unknown' },
+            created_at: comment.createdDate || ''
+          }))
+          resolve(comments)
+        } catch {
+          resolve([])
+        }
+      })
+    })
+    
+    request.on('error', () => {
+      resolve([])
+    })
+    
+    request.end()
+  })
+}
+
+/**
+ * Fetch Azure DevOps work item details and generate a branch name
+ * First tries az CLI (for authenticated access), falls back to public API
+ */
+export async function fetchAzureDevOpsWorkItem(workItemUrl: string): Promise<{
+  success: boolean
+  workItem?: AzureDevOpsWorkItem
+  suggestedBranch?: string
+  error?: string
+}> {
+  const parsed = parseAzureDevOpsWorkItemUrl(workItemUrl)
+  if (!parsed) {
+    return { success: false, error: 'Invalid Azure DevOps work item URL. Expected format: https://dev.azure.com/org/project/_workitems/edit/123' }
+  }
+  
+  const { organization, project, workItemId } = parsed
+  
+  // First, try using az CLI which handles authentication
+  try {
+    const { stdout } = await execAsync(
+      `az boards work-item show --id ${workItemId} --org "https://dev.azure.com/${organization}" --output json`,
+      { timeout: 30000 }
+    )
+    
+    const data = JSON.parse(stdout)
+    const fields = data.fields || {}
+    const title = fields['System.Title'] || ''
+    const description = fields['System.Description'] || null
+    const state = fields['System.State'] || 'Unknown'
+    
+    const workItem: AzureDevOpsWorkItem = {
+      number: data.id,
+      title,
+      body: description,
+      state,
+      html_url: workItemUrl
+    }
+    
+    const suggestedBranch = generateBranchFromTitle(workItem.number, workItem.title)
+    
+    // Try to fetch comments via CLI
+    try {
+      const { stdout: commentsOutput } = await execAsync(
+        `az boards work-item show --id ${workItemId} --org "https://dev.azure.com/${organization}" --expand comments --output json`,
+        { timeout: 30000 }
+      )
+      const commentsData = JSON.parse(commentsOutput)
+      if (commentsData.comments) {
+        workItem.comments = commentsData.comments.map((c: { text: string; createdBy?: { displayName: string }; createdDate?: string }) => ({
+          body: c.text,
+          user: { login: c.createdBy?.displayName || 'Unknown' },
+          created_at: c.createdDate || ''
+        }))
+      }
+    } catch {
+      // Comments fetch failed, continue without them
+    }
+    
+    return { success: true, workItem, suggestedBranch }
+  } catch (cliError) {
+    const errorMessage = String(cliError)
+    
+    // Check if az CLI is not installed or azure-devops extension is missing
+    if (errorMessage.includes('not found') || errorMessage.includes('not recognized') || errorMessage.includes('command not found')) {
+      // Fall back to public API
+      return fetchAzureDevOpsWorkItemViaApi(workItemUrl, organization, project, workItemId)
+    }
+    
+    // Check if the extension is not installed
+    if (errorMessage.includes('az boards') || errorMessage.includes('extension')) {
+      return fetchAzureDevOpsWorkItemViaApi(workItemUrl, organization, project, workItemId)
+    }
+    
+    // Check for auth errors from CLI
+    if (errorMessage.includes('login') || errorMessage.includes('authenticate') || errorMessage.includes('unauthorized')) {
+      return { success: false, error: 'Azure CLI authentication required. Run "az login" to authenticate, or ensure the project is public.' }
+    }
+    
+    // For other CLI errors, try the public API as fallback
+    return fetchAzureDevOpsWorkItemViaApi(workItemUrl, organization, project, workItemId)
+  }
+}
+
+/**
+ * Fetch Azure DevOps work item via public API (only works for public projects)
+ */
+async function fetchAzureDevOpsWorkItemViaApi(
+  workItemUrl: string,
+  organization: string,
+  project: string,
+  workItemId: number
+): Promise<{
+  success: boolean
+  workItem?: AzureDevOpsWorkItem
+  suggestedBranch?: string
+  error?: string
+}> {
+  const apiUrl = `https://dev.azure.com/${organization}/${project}/_apis/wit/workitems/${workItemId}?api-version=7.0`
+  
+  return new Promise((resolve) => {
+    const request = net.request({
+      method: 'GET',
+      url: apiUrl
+    })
+    
+    request.setHeader('Accept', 'application/json')
+    request.setHeader('User-Agent', 'Copilot-UI')
+    
+    let responseBody = ''
+    
+    request.on('response', (response) => {
+      if (response.statusCode === 404) {
+        resolve({ success: false, error: 'Work item not found. Check the URL and ensure the project is public or you have access.' })
+        return
+      }
+      
+      if (response.statusCode === 401 || response.statusCode === 403) {
+        resolve({ success: false, error: 'Access denied. The project may be private or require authentication.' })
+        return
+      }
+      
+      // Azure DevOps returns 203 with an HTML login page for private projects
+      if (response.statusCode === 203 || response.statusCode === 302) {
+        resolve({ success: false, error: 'Authentication required. This appears to be a private Azure DevOps project. Public projects can be accessed without authentication.' })
+        return
+      }
+      
+      if (response.statusCode !== 200) {
+        resolve({ success: false, error: `Azure DevOps API error: ${response.statusCode}` })
+        return
+      }
+      
+      response.on('data', (chunk) => {
+        responseBody += chunk.toString()
+      })
+      
+      response.on('end', async () => {
+        try {
+          // Check if we got HTML instead of JSON (sign-in page)
+          if (responseBody.trim().startsWith('<!DOCTYPE') || responseBody.trim().startsWith('<html')) {
+            resolve({ success: false, error: 'Authentication required. This appears to be a private Azure DevOps project. Public projects can be accessed without authentication.' })
+            return
+          }
+          
+          const data = JSON.parse(responseBody)
+          
+          // Azure DevOps work items have fields nested under 'fields'
+          const fields = data.fields || {}
+          const title = fields['System.Title'] || ''
+          const description = fields['System.Description'] || null
+          const state = fields['System.State'] || 'Unknown'
+          
+          const workItem: AzureDevOpsWorkItem = {
+            number: data.id,
+            title,
+            body: description,
+            state,
+            html_url: workItemUrl
+          }
+          
+          const suggestedBranch = generateBranchFromTitle(workItem.number, workItem.title)
+          
+          // Fetch comments for the work item
+          const comments = await fetchAzureDevOpsWorkItemComments(organization, project, workItemId)
+          workItem.comments = comments
+          
+          resolve({ success: true, workItem, suggestedBranch })
+        } catch (err) {
+          resolve({ success: false, error: 'Failed to parse Azure DevOps response' })
         }
       })
     })

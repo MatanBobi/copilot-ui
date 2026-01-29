@@ -319,6 +319,21 @@ const electronAPI = {
     }> => {
       return ipcRenderer.invoke('worktree:fetchGitHubIssue', issueUrl)
     },
+    fetchAzureDevOpsWorkItem: (workItemUrl: string): Promise<{
+      success: boolean
+      workItem?: { 
+        number: number
+        title: string
+        body: string | null
+        state: string
+        html_url: string
+        comments?: Array<{ body: string; user: { login: string }; created_at: string }>
+      }
+      suggestedBranch?: string
+      error?: string
+    }> => {
+      return ipcRenderer.invoke('worktree:fetchAzureDevOpsWorkItem', workItemUrl)
+    },
     checkGitVersion: (): Promise<{ supported: boolean; version: string }> => {
       return ipcRenderer.invoke('worktree:checkGitVersion')
     },

@@ -7,6 +7,16 @@ afterEach(() => {
   cleanup()
 })
 
+// Mock window.electronAPI
+Object.defineProperty(window, 'electronAPI', {
+  writable: true,
+  value: {
+    worktree: {
+      listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+    },
+  },
+})
+
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

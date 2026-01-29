@@ -3296,6 +3296,11 @@ ipcMain.handle('worktree:fetchGitHubIssue', async (_event, issueUrl: string) => 
   return worktree.fetchGitHubIssue(issueUrl)
 })
 
+// Fetch Azure DevOps work item and generate branch name
+ipcMain.handle('worktree:fetchAzureDevOpsWorkItem', async (_event, workItemUrl: string) => {
+  return worktree.fetchAzureDevOpsWorkItem(workItemUrl)
+})
+
 // Check git version for worktree support
 ipcMain.handle('worktree:checkGitVersion', async () => {
   return worktree.checkGitVersion()

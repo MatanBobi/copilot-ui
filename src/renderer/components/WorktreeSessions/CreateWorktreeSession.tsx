@@ -82,14 +82,35 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
     setIssueTitle(null)
     
     try {
-      const result = await window.electronAPI.worktree.fetchGitHubIssue(issueUrl.trim())
-      if (result.success && result.issue && result.suggestedBranch) {
-        setBranch(result.suggestedBranch)
-        setIssueTitle(result.issue.title)
-        setIssueBody(result.issue.body)
-        setIssueComments(result.issue.comments)
+      const url = issueUrl.trim()
+      
+      // Detect if this is a GitHub issue or Azure DevOps work item
+      const isGitHub = /github\.com\/[^/]+\/[^/]+\/issues\/\d+/.test(url)
+      const isAzureDevOps = /dev\.azure\.com\/[^/]+\/[^/]+\/_workitems\/edit\/\d+/.test(url) ||
+                           /[^.]+\.visualstudio\.com\/[^/]+\/_workitems\/edit\/\d+/.test(url)
+      
+      if (isGitHub) {
+        const result = await window.electronAPI.worktree.fetchGitHubIssue(url)
+        if (result.success && result.issue && result.suggestedBranch) {
+          setBranch(result.suggestedBranch)
+          setIssueTitle(result.issue.title)
+          setIssueBody(result.issue.body)
+          setIssueComments(result.issue.comments)
+        } else {
+          setError(result.error || 'Failed to fetch GitHub issue')
+        }
+      } else if (isAzureDevOps) {
+        const result = await window.electronAPI.worktree.fetchAzureDevOpsWorkItem(url)
+        if (result.success && result.workItem && result.suggestedBranch) {
+          setBranch(result.suggestedBranch)
+          setIssueTitle(result.workItem.title)
+          setIssueBody(result.workItem.body)
+          setIssueComments(result.workItem.comments)
+        } else {
+          setError(result.error || 'Failed to fetch Azure DevOps work item')
+        }
       } else {
-        setError(result.error || 'Failed to fetch issue')
+        setError('Unsupported URL format. Please use a GitHub issue URL or Azure DevOps work item URL')
       }
     } catch (err) {
       setError(String(err))
@@ -174,7 +195,7 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
                 className="flex items-center gap-1 text-xs text-copilot-text-muted hover:text-copilot-text"
               >
                 {showIssueSection ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-                GitHub Issue (optional)
+                Issue / Work Item (optional)
               </button>
               {showIssueSection && (
                 <>
@@ -184,7 +205,7 @@ export const CreateWorktreeSession: React.FC<CreateWorktreeSessionProps> = ({
                       value={issueUrl}
                       onChange={(e) => setIssueUrl(e.target.value)}
                       onKeyDown={handleIssueKeyDown}
-                      placeholder="https://github.com/owner/repo/issues/123"
+                      placeholder="GitHub or Azure DevOps URL"
                       className="flex-1 px-3 py-2 bg-copilot-bg border border-copilot-border rounded text-sm text-copilot-text placeholder:text-copilot-text-muted focus:outline-none focus:border-copilot-accent"
                       disabled={isCreating || isFetchingIssue}
                     />
