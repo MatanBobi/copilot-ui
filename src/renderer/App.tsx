@@ -5802,6 +5802,42 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                 </div>
               )}
 
+              {/* Target branch selector - always visible at top */}
+              <div className="mb-4">
+                <SearchableBranchSelect
+                  label="Target branch:"
+                  value={targetBranch}
+                  branches={availableBranches}
+                  onSelect={async (branch) => {
+                    setTargetBranch(branch);
+                    // Persist the selection
+                    if (activeTab) {
+                      await window.electronAPI.settings.setTargetBranch(activeTab.cwd, branch);
+                    }
+                    // Re-check if target branch is ahead
+                    if (activeTab) {
+                      try {
+                        const mainAheadResult = await window.electronAPI.git.checkMainAhead(activeTab.cwd, branch);
+                        if (mainAheadResult.success && mainAheadResult.isAhead) {
+                          setMainAheadInfo({ 
+                            isAhead: true, 
+                            commits: mainAheadResult.commits,
+                            targetBranch: branch
+                          });
+                        } else {
+                          setMainAheadInfo(null);
+                        }
+                      } catch {
+                        // Ignore errors
+                      }
+                    }
+                  }}
+                  isLoading={isLoadingBranches}
+                  disabled={isCommitting}
+                  placeholder="Select target branch..."
+                />
+              </div>
+
               {/* Options */}
               <div className="mb-4 flex items-center gap-2">
                 <span className="text-xs text-copilot-text-muted">
@@ -5812,11 +5848,11 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                   options={activeTab.editedFiles.length > 0 
                     ? [
                         { id: 'push' as const, label: 'Nothing' },
-                        { id: 'merge' as const, label: 'Merge to main' },
+                        { id: 'merge' as const, label: 'Merge to target' },
                         { id: 'pr' as const, label: 'Create PR' },
                       ]
                     : [
-                        { id: 'merge' as const, label: 'Merge to main' },
+                        { id: 'merge' as const, label: 'Merge to target' },
                         { id: 'pr' as const, label: 'Create PR' },
                       ]
                   }
@@ -5829,44 +5865,6 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                   minWidth="120px"
                 />
               </div>
-
-              {/* Target branch selector - only visible when merge or pr is selected */}
-              {(commitAction === 'merge' || commitAction === 'pr') && (
-                <div className="mb-4">
-                  <SearchableBranchSelect
-                    label="Target branch:"
-                    value={targetBranch}
-                    branches={availableBranches}
-                    onSelect={async (branch) => {
-                      setTargetBranch(branch);
-                      // Persist the selection
-                      if (activeTab) {
-                        await window.electronAPI.settings.setTargetBranch(activeTab.cwd, branch);
-                      }
-                      // Re-check if target branch is ahead
-                      if (activeTab) {
-                        try {
-                          const mainAheadResult = await window.electronAPI.git.checkMainAhead(activeTab.cwd, branch);
-                          if (mainAheadResult.success && mainAheadResult.isAhead) {
-                            setMainAheadInfo({ 
-                              isAhead: true, 
-                              commits: mainAheadResult.commits,
-                              targetBranch: branch
-                            });
-                          } else {
-                            setMainAheadInfo(null);
-                          }
-                        } catch {
-                          // Ignore errors
-                        }
-                      }
-                    }}
-                    isLoading={isLoadingBranches}
-                    disabled={isCommitting}
-                    placeholder="Select target branch..."
-                  />
-                </div>
-              )}
 
               {/* Remove worktree option - only visible when merge is selected and in a worktree */}
               {commitAction === 'merge' && activeTab?.cwd.includes('.copilot-sessions') && (
@@ -5917,7 +5915,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                   {isCommitting 
                     ? "Processing..." 
                     : activeTab.editedFiles.length === 0
-                      ? (commitAction === 'pr' ? "Create PR" : "Merge to Main")
+                      ? (commitAction === 'pr' ? "Create PR" : "Merge to Target")
                       : commitAction === 'pr' 
                         ? "Commit & Create PR" 
                         : commitAction === 'merge' 
@@ -5930,17 +5928,17 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         </Modal.Body>
       </Modal>
 
-      {/* Incoming Changes Modal - shown when merge from main brought changes */}
+      {/* Incoming Changes Modal - shown when merge from target branch brought changes */}
       <Modal
         isOpen={!!pendingMergeInfo && !!activeTab}
         onClose={() => setPendingMergeInfo(null)}
-        title="Main Branch Had Changes"
+        title="Target Branch Had Changes"
         width="500px"
       >
         <Modal.Body>
           <div className="mb-4">
             <div className="text-sm text-copilot-text mb-2">
-              Your branch has been synced with the latest changes from main. The following files were updated:
+              Your branch has been synced with the latest changes from {targetBranch || 'main'}. The following files were updated:
             </div>
             {pendingMergeInfo && pendingMergeInfo.incomingFiles.length > 0 ? (
               <div className="bg-copilot-bg rounded border border-copilot-surface max-h-40 overflow-y-auto">
@@ -5961,7 +5959,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
             )}
           </div>
           <div className="text-sm text-copilot-text-muted mb-4">
-            We recommend testing your changes before completing the merge to main.
+            We recommend testing your changes before completing the merge to {targetBranch || 'main'}.
           </div>
           <Modal.Footer>
             <Button
@@ -5976,7 +5974,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                 if (!activeTab) return;
                 setIsCommitting(true);
                 try {
-                  const result = await window.electronAPI.git.mergeToMain(activeTab.cwd, removeWorktreeAfterMerge);
+                  const result = await window.electronAPI.git.mergeToMain(activeTab.cwd, removeWorktreeAfterMerge, targetBranch || undefined);
                   if (result.success) {
                     if (removeWorktreeAfterMerge && activeTab.cwd.includes('.copilot-sessions')) {
                       const sessionId = activeTab.cwd.split(/[/\\]/).pop() || '';
@@ -6002,7 +6000,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
               }}
               isLoading={isCommitting}
             >
-              Merge to Main Now
+              Merge to Target Now
             </Button>
           </Modal.Footer>
         </Modal.Body>

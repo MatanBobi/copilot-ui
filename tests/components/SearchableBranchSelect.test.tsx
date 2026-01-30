@@ -63,7 +63,7 @@ describe('SearchableBranchSelect Component', () => {
         />
       )
       
-      expect(screen.getByText('Loading branches...')).toBeInTheDocument()
+      expect(screen.getByText('Loading...')).toBeInTheDocument()
     })
   })
 

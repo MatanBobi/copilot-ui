@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import { ChevronDownIcon, GitBranchIcon } from '../Icons'
-import { Spinner } from '../Spinner'
 
 export interface SearchableBranchSelectProps {
   /** Currently selected branch */
@@ -90,12 +89,12 @@ export const SearchableBranchSelect: React.FC<SearchableBranchSelectProps> = ({
         type="button"
       >
         {isLoading ? (
-          <Spinner size={12} />
+          <span className="w-3 h-3 border border-copilot-text-muted/30 border-t-copilot-text-muted rounded-full animate-spin shrink-0" />
         ) : (
           <GitBranchIcon size={12} className="text-copilot-text-muted shrink-0" />
         )}
         <span className={`flex-1 truncate ${value ? 'text-copilot-text' : 'text-copilot-text-muted'}`}>
-          {isLoading ? 'Loading branches...' : (value || placeholder)}
+          {isLoading ? 'Loading...' : (value || placeholder)}
         </span>
         <ChevronDownIcon size={10} className="text-copilot-text-muted shrink-0" />
       </button>
