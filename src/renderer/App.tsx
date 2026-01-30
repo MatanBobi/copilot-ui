@@ -2847,10 +2847,6 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
       const branchesPromise = window.electronAPI.git.listBranches(activeTab.cwd);
       const savedTargetBranchPromise = window.electronAPI.settings.getTargetBranch(activeTab.cwd);
       
-      // Check if origin/main is ahead of current branch (in parallel with other checks)
-      // We'll re-check with selected target branch after loading persisted setting
-      const mainAheadPromise = window.electronAPI.git.checkMainAhead(activeTab.cwd);
-      
       // Get ALL changed files in the repo, not just the ones we tracked
       const changedResult = await window.electronAPI.git.getChangedFiles(
         activeTab.cwd,
@@ -2876,18 +2872,35 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
       }
       setIsLoadingBranches(false);
       
-      // Load persisted target branch
+      // Load persisted target branch first, then check if it's ahead
+      let effectiveTargetBranch = 'main';
       try {
         const savedTargetResult = await savedTargetBranchPromise;
         if (savedTargetResult.success && savedTargetResult.targetBranch) {
+          effectiveTargetBranch = savedTargetResult.targetBranch;
           setTargetBranch(savedTargetResult.targetBranch);
         } else {
-          // Default to main
           setTargetBranch('main');
         }
       } catch {
         setTargetBranch('main');
       }
+      
+      // Now check if target branch is ahead using the persisted target branch
+      const checkTargetAhead = async () => {
+        try {
+          const mainAheadResult = await window.electronAPI.git.checkMainAhead(activeTab.cwd, effectiveTargetBranch);
+          if (mainAheadResult.success && mainAheadResult.isAhead) {
+            setMainAheadInfo({ 
+              isAhead: true, 
+              commits: mainAheadResult.commits,
+              targetBranch: effectiveTargetBranch
+            });
+          }
+        } catch {
+          // Ignore errors checking target branch ahead
+        }
+      };
       
       // If no files have changes, allow merge/PR without commit
       if (actualChangedFiles.length === 0) {
@@ -2897,19 +2910,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         if (commitAction === 'push') {
           setCommitAction('merge');
         }
-        // Still check if main is ahead even when no files to commit
-        try {
-          const mainAheadResult = await mainAheadPromise;
-          if (mainAheadResult.success && mainAheadResult.isAhead) {
-            setMainAheadInfo({ 
-              isAhead: true, 
-              commits: mainAheadResult.commits,
-              targetBranch: mainAheadResult.targetBranch
-            });
-          }
-        } catch {
-          // Ignore errors checking main ahead
-        }
+        await checkTargetAhead();
         return;
       }
 
@@ -2933,19 +2934,8 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         setCommitMessage(`Update ${fileNames}`);
       }
       
-      // Check if main is ahead (await the promise we started earlier)
-      try {
-        const mainAheadResult = await mainAheadPromise;
-        if (mainAheadResult.success && mainAheadResult.isAhead) {
-          setMainAheadInfo({ 
-            isAhead: true, 
-            commits: mainAheadResult.commits,
-            targetBranch: mainAheadResult.targetBranch
-          });
-        }
-      } catch {
-        // Ignore errors checking main ahead
-      }
+      // Check if target branch is ahead
+      await checkTargetAhead();
     } catch (error) {
       console.error("Failed to generate commit message:", error);
       const fileNames = activeTab.editedFiles
