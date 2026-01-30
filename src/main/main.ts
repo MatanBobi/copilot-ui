@@ -3603,7 +3603,7 @@ ipcMain.handle('updates:setLastSeenVersion', async (_event, version: string) => 
   return { success: true }
 })
 
-// Open the download URL in the default browser
+// Open the download URL in the default browser (fallback)
 ipcMain.handle('updates:openDownloadUrl', async (_event, url: string) => {
   try {
     await shell.openExternal(url)
@@ -3611,6 +3611,68 @@ ipcMain.handle('updates:openDownloadUrl', async (_event, url: string) => {
   } catch (error) {
     return { success: false, error: String(error) }
   }
+})
+
+// Check if we're running from a git repository (can auto-update)
+ipcMain.handle('updates:canAutoUpdate', async () => {
+  try {
+    // Check if we're in a git repo by looking for .git folder
+    const repoRoot = join(__dirname, '..', '..')
+    const gitDir = join(repoRoot, '.git')
+    const isGitRepo = existsSync(gitDir)
+    
+    // Also check if git is available
+    if (isGitRepo) {
+      await execAsync('git --version')
+      return { canAutoUpdate: true, repoPath: repoRoot }
+    }
+    return { canAutoUpdate: false, reason: 'Not running from git repository' }
+  } catch (error) {
+    return { canAutoUpdate: false, reason: 'Git not available' }
+  }
+})
+
+// Perform the auto-update: git pull, npm install, and prepare for restart
+ipcMain.handle('updates:performUpdate', async (_event, onProgress?: (stage: string) => void) => {
+  try {
+    const repoRoot = join(__dirname, '..', '..')
+    
+    // Stage 1: Git fetch and pull
+    console.log('Update: Fetching latest changes...')
+    await execAsync('git fetch origin main', { cwd: repoRoot })
+    
+    // Check if there are changes to pull
+    const { stdout: behindCount } = await execAsync('git rev-list HEAD..origin/main --count', { cwd: repoRoot })
+    if (parseInt(behindCount.trim()) === 0) {
+      return { success: true, message: 'Already up to date', needsRestart: false }
+    }
+    
+    // Pull the changes
+    console.log('Update: Pulling latest changes...')
+    await execAsync('git pull origin main', { cwd: repoRoot })
+    
+    // Stage 2: Install dependencies
+    console.log('Update: Installing dependencies...')
+    await execAsync('npm install', { cwd: repoRoot })
+    
+    // Stage 3: Build the app
+    console.log('Update: Building application...')
+    await execAsync('npm run build', { cwd: repoRoot })
+    
+    console.log('Update: Complete! Ready to restart.')
+    return { success: true, message: 'Update complete', needsRestart: true }
+  } catch (error) {
+    console.error('Update failed:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+// Restart the application
+ipcMain.handle('updates:restartApp', async () => {
+  // Relaunch the app and quit the current instance
+  app.relaunch()
+  app.quit()
+  return { success: true }
 })
 
 // Simple semver comparison: returns 1 if a > b, -1 if a < b, 0 if equal

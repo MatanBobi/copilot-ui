@@ -465,6 +465,15 @@ const electronAPI = {
     },
     openDownloadUrl: (url: string): Promise<{ success: boolean; error?: string }> => {
       return ipcRenderer.invoke('updates:openDownloadUrl', url)
+    },
+    canAutoUpdate: (): Promise<{ canAutoUpdate: boolean; repoPath?: string; reason?: string }> => {
+      return ipcRenderer.invoke('updates:canAutoUpdate')
+    },
+    performUpdate: (): Promise<{ success: boolean; message?: string; needsRestart?: boolean; error?: string }> => {
+      return ipcRenderer.invoke('updates:performUpdate')
+    },
+    restartApp: (): Promise<{ success: boolean }> => {
+      return ipcRenderer.invoke('updates:restartApp')
     }
   }
 }

@@ -6134,12 +6134,6 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         onClose={() => setShowUpdateModal(false)}
         currentVersion={updateInfo?.currentVersion || buildInfo.baseVersion}
         newVersion={updateInfo?.latestVersion || ''}
-        onDownload={() => {
-          if (updateInfo?.downloadUrl) {
-            window.electronAPI.updates.openDownloadUrl(updateInfo.downloadUrl);
-          }
-          setShowUpdateModal(false);
-        }}
         onDontRemind={() => {
           if (updateInfo?.latestVersion) {
             window.electronAPI.updates.dismissVersion(updateInfo.latestVersion);

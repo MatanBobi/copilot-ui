@@ -1,8 +1,26 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { UpdateAvailableModal } from '../../src/renderer/components/UpdateAvailableModal'
 import { ReleaseNotesModal } from '../../src/renderer/components/ReleaseNotesModal'
+
+// Mock the electronAPI
+const mockCanAutoUpdate = vi.fn()
+const mockPerformUpdate = vi.fn()
+const mockRestartApp = vi.fn()
+const mockOpenDownloadUrl = vi.fn()
+
+beforeEach(() => {
+  // @ts-expect-error - mocking electron API
+  window.electronAPI = {
+    updates: {
+      canAutoUpdate: mockCanAutoUpdate,
+      performUpdate: mockPerformUpdate,
+      restartApp: mockRestartApp,
+      openDownloadUrl: mockOpenDownloadUrl,
+    }
+  }
+})
 
 describe('UpdateAvailableModal', () => {
   const defaultProps = {
@@ -10,15 +28,15 @@ describe('UpdateAvailableModal', () => {
     onClose: vi.fn(),
     currentVersion: '1.0.0',
     newVersion: '1.1.0',
-    onDownload: vi.fn(),
     onDontRemind: vi.fn(),
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockCanAutoUpdate.mockResolvedValue({ canAutoUpdate: true })
   })
 
-  it('renders when isOpen is true', () => {
+  it('renders when isOpen is true', async () => {
     render(<UpdateAvailableModal {...defaultProps} />)
     expect(screen.getByText('Update Available')).toBeInTheDocument()
   })
@@ -28,29 +46,38 @@ describe('UpdateAvailableModal', () => {
     expect(screen.queryByText('Update Available')).not.toBeInTheDocument()
   })
 
-  it('displays current and new versions', () => {
+  it('displays current and new versions', async () => {
     render(<UpdateAvailableModal {...defaultProps} />)
     expect(screen.getByText('1.0.0')).toBeInTheDocument()
     expect(screen.getByText('1.1.0')).toBeInTheDocument()
   })
 
-  it('calls onDownload when Download button is clicked', () => {
-    render(<UpdateAvailableModal {...defaultProps} />)
-    fireEvent.click(screen.getByText('Download'))
-    expect(defaultProps.onDownload).toHaveBeenCalled()
-  })
-
-  it('calls onClose when Later button is clicked', () => {
+  it('calls onClose when Later button is clicked', async () => {
     render(<UpdateAvailableModal {...defaultProps} />)
     fireEvent.click(screen.getByText('Later'))
     expect(defaultProps.onClose).toHaveBeenCalled()
   })
 
-  it('calls onDontRemind and onClose when dismiss link is clicked', () => {
+  it('calls onDontRemind and onClose when dismiss link is clicked', async () => {
     render(<UpdateAvailableModal {...defaultProps} />)
     fireEvent.click(screen.getByText("Don't remind me about this version"))
     expect(defaultProps.onDontRemind).toHaveBeenCalled()
     expect(defaultProps.onClose).toHaveBeenCalled()
+  })
+
+  it('calls performUpdate when Update button is clicked', async () => {
+    mockPerformUpdate.mockResolvedValue({ success: true, needsRestart: true })
+    render(<UpdateAvailableModal {...defaultProps} />)
+    
+    await waitFor(() => {
+      expect(screen.getByText('Update')).toBeInTheDocument()
+    })
+    
+    fireEvent.click(screen.getByText('Update'))
+    
+    await waitFor(() => {
+      expect(mockPerformUpdate).toHaveBeenCalled()
+    })
   })
 })
 
