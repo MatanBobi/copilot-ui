@@ -167,19 +167,5 @@ jobs:
         with:
           tag: v${{ needs.validate.outputs.new_version }}
           name: v${{ needs.validate.outputs.new_version }}
-          body: |
-            ## Release Notes
-            
-            ${{ steps.release_notes.outputs.notes }}
-            
-            ---
-            
-            **Note:** This release does not include pre-built binaries. To run Copilot Skins, clone the repository and build locally:
-            
-            ```bash
-            git clone https://github.com/idofrizler/copilot-ui.git
-            cd copilot-ui
-            npm install
-            npm run dev
-            ```
+          body: ${{ steps.release_notes.outputs.notes }}
           makeLatest: true
