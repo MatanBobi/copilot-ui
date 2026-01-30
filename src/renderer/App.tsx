@@ -45,6 +45,8 @@ import {
   UpdateAvailableModal,
   ReleaseNotesModal,
   SearchableBranchSelect,
+  CodeBlockWithCopy,
+  RepeatIcon,
 } from "./components";
 import {
   Status,
@@ -602,6 +604,7 @@ const App: React.FC = () => {
   );
   const [showMcpServers, setShowMcpServers] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
+  const [showMcpJsonModal, setShowMcpJsonModal] = useState(false);
   const [editingMcpServer, setEditingMcpServer] = useState<{
     name: string;
     server: MCPServerConfig;
@@ -2857,6 +2860,28 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
     }
   };
 
+  const handleRefreshMcpServers = async () => {
+    try {
+      const config = await window.electronAPI.mcp.getConfig();
+      setMcpServers(config.mcpServers || {});
+      console.log("Refreshed MCP servers:", Object.keys(config.mcpServers || {}));
+    } catch (error) {
+      console.error("Failed to refresh MCP servers:", error);
+    }
+  };
+
+  const handleOpenMcpConfigInEditor = async () => {
+    try {
+      const { path } = await window.electronAPI.mcp.getConfigPath();
+      const result = await window.electronAPI.file.openFile(path);
+      if (!result.success) {
+        console.error("Failed to open MCP config file:", result.error);
+      }
+    } catch (error) {
+      console.error("Failed to open MCP config in editor:", error);
+    }
+  };
+
   const [isGeneratingMessage, setIsGeneratingMessage] = useState(false);
 
   const handleOpenCommitModal = async () => {
@@ -2874,10 +2899,6 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
       // Load branches and persisted target branch in parallel with other checks
       const branchesPromise = window.electronAPI.git.listBranches(activeTab.cwd);
       const savedTargetBranchPromise = window.electronAPI.settings.getTargetBranch(activeTab.cwd);
-      
-      // Check if origin/main is ahead of current branch (in parallel with other checks)
-      // We'll re-check with selected target branch after loading persisted setting
-      const mainAheadPromise = window.electronAPI.git.checkMainAhead(activeTab.cwd);
       
       // Get ALL changed files in the repo, not just the ones we tracked
       const changedResult = await window.electronAPI.git.getChangedFiles(
@@ -2904,18 +2925,35 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
       }
       setIsLoadingBranches(false);
       
-      // Load persisted target branch
+      // Load persisted target branch first, then check if it's ahead
+      let effectiveTargetBranch = 'main';
       try {
         const savedTargetResult = await savedTargetBranchPromise;
         if (savedTargetResult.success && savedTargetResult.targetBranch) {
+          effectiveTargetBranch = savedTargetResult.targetBranch;
           setTargetBranch(savedTargetResult.targetBranch);
         } else {
-          // Default to main
           setTargetBranch('main');
         }
       } catch {
         setTargetBranch('main');
       }
+      
+      // Now check if target branch is ahead using the persisted target branch
+      const checkTargetAhead = async () => {
+        try {
+          const mainAheadResult = await window.electronAPI.git.checkMainAhead(activeTab.cwd, effectiveTargetBranch);
+          if (mainAheadResult.success && mainAheadResult.isAhead) {
+            setMainAheadInfo({ 
+              isAhead: true, 
+              commits: mainAheadResult.commits,
+              targetBranch: effectiveTargetBranch
+            });
+          }
+        } catch {
+          // Ignore errors checking target branch ahead
+        }
+      };
       
       // If no files have changes, allow merge/PR without commit
       if (actualChangedFiles.length === 0) {
@@ -2925,19 +2963,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         if (commitAction === 'push') {
           setCommitAction('merge');
         }
-        // Still check if main is ahead even when no files to commit
-        try {
-          const mainAheadResult = await mainAheadPromise;
-          if (mainAheadResult.success && mainAheadResult.isAhead) {
-            setMainAheadInfo({ 
-              isAhead: true, 
-              commits: mainAheadResult.commits,
-              targetBranch: mainAheadResult.targetBranch
-            });
-          }
-        } catch {
-          // Ignore errors checking main ahead
-        }
+        await checkTargetAhead();
         return;
       }
 
@@ -2961,19 +2987,8 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
         setCommitMessage(`Update ${fileNames}`);
       }
       
-      // Check if main is ahead (await the promise we started earlier)
-      try {
-        const mainAheadResult = await mainAheadPromise;
-        if (mainAheadResult.success && mainAheadResult.isAhead) {
-          setMainAheadInfo({ 
-            isAhead: true, 
-            commits: mainAheadResult.commits,
-            targetBranch: mainAheadResult.targetBranch
-          });
-        }
-      } catch {
-        // Ignore errors checking main ahead
-      }
+      // Check if target branch is ahead
+      await checkTargetAhead();
     } catch (error) {
       console.error("Failed to generate commit message:", error);
       const fileNames = activeTab.editedFiles
@@ -4154,11 +4169,12 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                               
                               if (isBlock) {
                                 return (
-                                  <pre className={`bg-copilot-bg rounded p-2 my-2 overflow-x-auto text-xs max-w-full ${isDiagram ? 'ascii-diagram' : ''}`}>
-                                    <code className="text-copilot-text">
-                                      {children}
-                                    </code>
-                                  </pre>
+                                  <CodeBlockWithCopy
+                                    isDiagram={isDiagram}
+                                    textContent={textContent}
+                                  >
+                                    {children}
+                                  </CodeBlockWithCopy>
                                 );
                               } else {
                                 return (
@@ -5560,6 +5576,22 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                     )}
                   </button>
                   <IconButton
+                    icon={<FileIcon size={12} />}
+                    onClick={() => setShowMcpJsonModal(true)}
+                    variant="accent"
+                    size="sm"
+                    title="View JSON config"
+                    className="mr-1"
+                  />
+                  <IconButton
+                    icon={<RepeatIcon size={12} />}
+                    onClick={handleRefreshMcpServers}
+                    variant="accent"
+                    size="sm"
+                    title="Refresh MCP servers"
+                    className="mr-1"
+                  />
+                  <IconButton
                     icon={<PlusIcon size={12} />}
                     onClick={openAddMcpModal}
                     variant="success"
@@ -5876,11 +5908,11 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                   options={activeTab.editedFiles.length > 0 
                     ? [
                         { id: 'push' as const, label: 'Nothing' },
-                        { id: 'merge' as const, label: 'Merge to target' },
+                        { id: 'merge' as const, label: 'Merge to target branch' },
                         { id: 'pr' as const, label: 'Create PR' },
                       ]
                     : [
-                        { id: 'merge' as const, label: 'Merge to target' },
+                        { id: 'merge' as const, label: 'Merge to target branch' },
                         { id: 'pr' as const, label: 'Create PR' },
                       ]
                   }
@@ -5890,7 +5922,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                   }}
                   disabled={isCommitting}
                   align="left"
-                  minWidth="120px"
+                  minWidth="160px"
                 />
               </div>
 
@@ -5943,7 +5975,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
                   {isCommitting 
                     ? "Processing..." 
                     : activeTab.editedFiles.length === 0
-                      ? (commitAction === 'pr' ? "Create PR" : "Merge to Target")
+                      ? (commitAction === 'pr' ? "Create PR" : "Merge")
                       : commitAction === 'pr' 
                         ? "Commit & Create PR" 
                         : commitAction === 'merge' 
@@ -6028,7 +6060,7 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
               }}
               isLoading={isCommitting}
             >
-              Merge to Target Now
+              Merge Now
             </Button>
           </Modal.Footer>
         </Modal.Body>
@@ -6165,6 +6197,33 @@ Only when ALL the above are verified complete, output exactly: ${RALPH_COMPLETIO
               }
             >
               {editingMcpServer ? "Save Changes" : "Add Server"}
+            </Button>
+          </Modal.Footer>
+        </Modal.Body>
+      </Modal>
+
+      {/* MCP JSON View Modal */}
+      <Modal
+        isOpen={showMcpJsonModal}
+        onClose={() => setShowMcpJsonModal(false)}
+        title="MCP Configuration"
+        width="600px"
+      >
+        <Modal.Body>
+          <div className="mb-3">
+            <pre className="bg-copilot-bg border border-copilot-border rounded p-3 text-xs text-copilot-text font-mono overflow-auto max-h-96 whitespace-pre-wrap">
+              {JSON.stringify({ mcpServers }, null, 2)}
+            </pre>
+          </div>
+          <Modal.Footer className="pt-2">
+            <Button variant="ghost" onClick={() => setShowMcpJsonModal(false)}>
+              Close
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleOpenMcpConfigInEditor}
+            >
+              Open in Editor
             </Button>
           </Modal.Footer>
         </Modal.Body>
