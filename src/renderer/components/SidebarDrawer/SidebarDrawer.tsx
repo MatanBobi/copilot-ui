@@ -84,7 +84,7 @@ export function SidebarDrawer({
           transition-opacity duration-300 ease-in-out
           ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}
         `}
-        style={{ zIndex, WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        style={{ zIndex, ...(isOpen ? { WebkitAppRegion: 'no-drag' } : {}) } as React.CSSProperties}
         aria-hidden="true"
       />
 
@@ -105,7 +105,7 @@ export function SidebarDrawer({
             width: `${width}px`,
             maxWidth: '85vw',
             zIndex: zIndex + 1,
-            WebkitAppRegion: 'no-drag',
+            ...(isOpen ? { WebkitAppRegion: 'no-drag' } : {}),
           } as React.CSSProperties
         }
         role="dialog"
